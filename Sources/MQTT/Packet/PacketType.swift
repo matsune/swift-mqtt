@@ -1,4 +1,4 @@
-enum PacketType: UInt8 {
+public enum PacketType: UInt8 {
     /// Client request to connect to Server
     case connect = 0x01
     /// Connect acknowledgment

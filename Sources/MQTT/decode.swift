@@ -5,8 +5,7 @@ enum DecodeError: Error {
     case invalidPacketType
 }
 
-@available(OSX 10.15.0, *)
-public func decode(data: Data) throws -> some MQTTRecvPacket {
+func decode(data: Data) throws -> some MQTTRecvPacket {
     if data.isEmpty {
         throw DecodeError.invalidData
     }
@@ -17,7 +16,7 @@ public func decode(data: Data) throws -> some MQTTRecvPacket {
     case .connack:
         return try ConnackPacket(data: data)
     default:
-        fatalError("unimplemented")
+        throw DecodeError.invalidPacketType
     }
 }
 

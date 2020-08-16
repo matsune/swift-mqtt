@@ -3,10 +3,17 @@ import Foundation
 public protocol MQTTPacket {
     associatedtype VariableHeader
     associatedtype Payload
-    
+ 
+    var packetType: PacketType { get }
     var fixedHeader: FixedHeader { get }
     var variableHeader: VariableHeader? { get }
     var payload: Payload? { get }
+}
+
+extension MQTTPacket {
+    public var packetType: PacketType {
+        fixedHeader.packetType
+    }
 }
 
 public protocol DataEncodable {
@@ -17,7 +24,7 @@ public protocol DataDecodable {
     init(data: Data) throws
 }
 
-public class DataUnused: DataEncodable, DataDecodable {
+public final class DataUnused: DataEncodable, DataDecodable {
     public var encodedData: Data {
         fatalError("never used")
     }
@@ -27,14 +34,14 @@ public class DataUnused: DataEncodable, DataDecodable {
     }
 }
 
-extension MQTTPacket where VariableHeader: DataUnused {
-    public var variableHeader: VariableHeader? {
+public extension MQTTPacket where VariableHeader: DataUnused {
+    var variableHeader: VariableHeader? {
         return nil
     }
 }
 
-extension MQTTPacket where Payload: DataUnused {
-    public var payload: Payload? {
+public extension MQTTPacket where Payload: DataUnused {
+    var payload: Payload? {
         return nil
     }
 }

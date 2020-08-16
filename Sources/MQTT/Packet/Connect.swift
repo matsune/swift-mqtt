@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ConnectVariableHeader: DataEncodable {
+struct ConnectVariableHeader: DataEncodable {
     struct Flags: OptionSet {
         let rawValue: UInt8
         
@@ -21,7 +21,7 @@ public struct ConnectVariableHeader: DataEncodable {
     // Keep Alive
     let keepAliveSec: UInt16
 
-    public var encodedData: Data {
+    var encodedData: Data {
         var data = Data()
         data.write(protocolName)
         data.write(protocolLevel)
@@ -31,7 +31,7 @@ public struct ConnectVariableHeader: DataEncodable {
     }
 }
 
-public struct Message {
+struct Message {
     let topic: String
     let payload: Data
     let retain: Bool
@@ -46,13 +46,13 @@ public struct Message {
 }
 
 
-public struct ConnectPayload: DataEncodable {
+struct ConnectPayload: DataEncodable {
     let clientID: String
     let will: Message?
     let username: String?
     let password: String?
     
-    public var encodedData: Data {
+    var encodedData: Data {
         var data = Data()
         data.write(clientID)
         if let will = will {
@@ -69,19 +69,19 @@ public struct ConnectPayload: DataEncodable {
     }
 }
 
-public class ConnectPacket: MQTTSendPacket {
-    public typealias VariableHeader = ConnectVariableHeader
-    public typealias Payload = ConnectPayload
+class ConnectPacket: MQTTSendPacket {
+    typealias VariableHeader = ConnectVariableHeader
+    typealias Payload = ConnectPayload
     
-    public let fixedHeader: FixedHeader
-    public var clientID: String
-    public var cleanSession: Bool
-    public var will: Message?
-    public var username: String?
-    public var password: String?
-    public var keepAliveSec: UInt16
+    let fixedHeader: FixedHeader
+    var clientID: String
+    var cleanSession: Bool
+    var will: Message?
+    var username: String?
+    var password: String?
+    var keepAliveSec: UInt16
 
-    public init(
+    init(
           clientID: String = "",
           cleanSession: Bool = true,
           will: Message? = nil,
@@ -98,7 +98,7 @@ public class ConnectPacket: MQTTSendPacket {
         self.fixedHeader = FixedHeader(packetType: .connect, flags: 0)
     }
     
-    public var variableHeader: VariableHeader? {
+    var variableHeader: VariableHeader? {
         var flags: VariableHeader.Flags = []
         if cleanSession {
             flags.insert(.cleanSession)
@@ -119,7 +119,7 @@ public class ConnectPacket: MQTTSendPacket {
         return VariableHeader(flags: flags, keepAliveSec: keepAliveSec)
     }
     
-    public var payload: ConnectPayload? {
+    var payload: ConnectPayload? {
         ConnectPayload(clientID: clientID, will: will, username: username, password: password)
     }
 }

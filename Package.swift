@@ -5,6 +5,9 @@ import PackageDescription
 
 let package = Package(
     name: "swift-mqtt",
+    platforms: [
+        .macOS(.v10_15),
+    ],
     products: [
         .library(name: "MQTT", targets: ["MQTT"]),
     ],
