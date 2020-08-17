@@ -32,6 +32,10 @@ class App: MQTTClientDelegate {
             print(packet)
         }
     }
+    
+    func didChangeState(client: MQTTClient, state: ConnectionState) {
+        print(state)
+    }
 }
 
 try App().run()

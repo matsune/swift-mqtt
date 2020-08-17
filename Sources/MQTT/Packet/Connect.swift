@@ -82,11 +82,11 @@ class ConnectPacket: MQTTSendPacket {
     var keepAliveSec: UInt16
 
     init(
-          clientID: String = "",
-          cleanSession: Bool = true,
-          will: Message? = nil,
-          username: String? = nil,
-          password: String? = nil,
+          clientID: String,
+          cleanSession: Bool,
+          will: Message?,
+          username: String?,
+          password: String?,
           keepAliveSec: UInt16
       ) {
         self.clientID = clientID

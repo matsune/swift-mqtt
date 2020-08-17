@@ -38,8 +38,26 @@ class Handler: ChannelInboundHandler {
     }
 }
 
+public enum ConnectionState {
+    case disconnected
+    case connecting
+    case connected
+}
+
 public protocol MQTTClientDelegate: AnyObject {
+    var delegateDispatchQueue: DispatchQueue { get }
+    
     func didReceive<Packet: MQTTRecvPacket>(client: MQTTClient, packet: Packet)
+    func didChangeState(client: MQTTClient, state: ConnectionState)
+}
+
+public extension MQTTClientDelegate {
+    var delegateDispatchQueue: DispatchQueue {
+        .main
+    }
+
+    func didReceive<Packet: MQTTRecvPacket>(client: MQTTClient, packet: Packet) {}
+    func didChangeState(client: MQTTClient, state: ConnectionState) {}
 }
 
 public enum EventLoopGroupProvider {
@@ -53,7 +71,7 @@ public class MQTTClient {
         case unix(path: String)
     }
     
-    enum State {
+    public enum State {
         case disconnected
         case connecting(Channel)
         case connected(Channel)
@@ -63,18 +81,35 @@ public class MQTTClient {
     public var clientID: String
     public var cleanSession: Bool
     public var keepAlive: UInt16
+    public var username: String?
+    public var password: String?
 
     public weak var delegate: MQTTClientDelegate?
     
     private let group: EventLoopGroup
-    private var state: State = .disconnected
+    public private(set) var state: State = .disconnected {
+        didSet {
+            delegate?.delegateDispatchQueue.async {
+                switch self.state {
+                case .disconnected:
+                    self.delegate?.didChangeState(client: self, state: .disconnected)
+                case .connecting:
+                    self.delegate?.didChangeState(client: self, state: .connecting)
+                case .connected:
+                    self.delegate?.didChangeState(client: self, state: .connected)
+                }
+            }
+        }
+    }
     
     public init(
         loopGroupProvider: EventLoopGroupProvider = .createNew,
         domain: Domain,
         clientID: String = "",
         cleanSession: Bool,
-        keepAlive: UInt16
+        keepAlive: UInt16,
+        username: String? = nil,
+        password: String? = nil
     ) {
         switch loopGroupProvider {
         case .createNew:
@@ -86,6 +121,8 @@ public class MQTTClient {
         self.clientID = clientID
         self.cleanSession = cleanSession
         self.keepAlive = keepAlive
+        self.username = username
+        self.password = password
     }
     
     deinit {
@@ -121,6 +158,9 @@ public class MQTTClient {
                 return self.writeAndFlush(channel: channel,
                                           packet: ConnectPacket(clientID: self.clientID,
                                                                 cleanSession: self.cleanSession,
+                                                                will: nil,
+                                                                username: self.username,
+                                                                password: self.password,
                                                                 keepAliveSec: self.keepAlive))
             }
     }
@@ -162,23 +202,23 @@ public class MQTTClient {
         case .disconnected:
             return nil
         }
-        
     }
 }
 
 extension MQTTClient: HandlerDelegate {
     func didReceive<P: MQTTRecvPacket>(packet: P) {
         switch packet {
-        case is ConnackPacket:
-            switch state {
-            case let .connecting(channel):
+        case let packet as ConnackPacket:
+            if case let .connecting(channel) = state, packet.returnCode == .accepted {
                 self.state = .connected(channel)
-            default:
-                break
+            } else {
+                self.state = .disconnected
             }
         default:
             break
         }
-        delegate?.didReceive(client: self, packet: packet)
+        delegate?.delegateDispatchQueue.async {
+            self.delegate?.didReceive(client: self, packet: packet)
+        }
     }
 }

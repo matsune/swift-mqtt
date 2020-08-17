@@ -26,6 +26,14 @@ public final class ConnackPacket: MQTTRecvPacket {
     public let fixedHeader: FixedHeader
     public let variableHeader: ConnackVariableHeader?
     
+    public var returnCode: ConnackVariableHeader.ReturnCode {
+        variableHeader!.returnCode
+    }
+
+    public var sessionPresent: Bool {
+        variableHeader!.sessionPresent
+    }
+    
     init(data: Data) throws {
         self.fixedHeader = FixedHeader(packetType: .connack, flags: 0)
         let remainLen = try decode(remainingLength: data)
