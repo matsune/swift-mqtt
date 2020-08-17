@@ -39,13 +39,24 @@ class Handler: ChannelInboundHandler {
 }
 
 public protocol MQTTClientDelegate: AnyObject {
-    func didReceive<Packet: MQTTRecvPacket>(packet: Packet)
+    func didReceive<Packet: MQTTRecvPacket>(client: MQTTClient, packet: Packet)
+}
+
+public enum EventLoopGroupProvider {
+    case shared(EventLoopGroup)
+    case createNew
 }
 
 public class MQTTClient {
     public enum Domain {
         case ip(host: String, port: Int)
         case unix(path: String)
+    }
+    
+    enum State {
+        case disconnected
+        case connecting(Channel)
+        case connected(Channel)
     }
     
     public var domain: Domain
@@ -56,28 +67,32 @@ public class MQTTClient {
     public weak var delegate: MQTTClientDelegate?
     
     private let group: EventLoopGroup
-    private var channel: Channel?
-    
-    
+    private var state: State = .disconnected
     
     public init(
+        loopGroupProvider: EventLoopGroupProvider = .createNew,
         domain: Domain,
         clientID: String = "",
         cleanSession: Bool,
         keepAlive: UInt16
     ) {
+        switch loopGroupProvider {
+        case .createNew:
+            self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        case let .shared(group):
+            self.group = group
+        }
         self.domain = domain
         self.clientID = clientID
         self.cleanSession = cleanSession
         self.keepAlive = keepAlive
-        self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     }
     
     deinit {
         try? group.syncShutdownGracefully()
     }
     
-    public func connect() throws -> EventLoopFuture<Void> {
+    private func connectSocket() -> EventLoopFuture<Channel> {
         let bootstrap = ClientBootstrap(group: group)
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .channelInitializer { channel in
@@ -87,33 +102,83 @@ public class MQTTClient {
                 handler.delegate = self
                 return channel.pipeline.addHandler(handler)
             }
-        let future: EventLoopFuture<Channel>
         switch domain {
         case let .ip(host, port):
-            future = bootstrap.connect(host: host, port: port)
+            return bootstrap.connect(host: host, port: port)
         case let .unix(path):
-            future = bootstrap.connect(unixDomainSocketPath: path)
-        }
-        return future.map { channel in
-            self.channel = channel
-            let data = ConnectPacket(clientID: self.clientID,
-                                     cleanSession: self.cleanSession,
-                                     keepAliveSec: self.keepAlive).encodedData
-            channel.writeAndFlush(ByteBuffer(bytes: data), promise: nil)
+            return bootstrap.connect(unixDomainSocketPath: path)
         }
     }
     
-    public var isActive: Bool {
-        channel?.isActive ?? false
+    @discardableResult
+    public func connect() -> EventLoopFuture<Void>? {
+        guard !isConnected else {
+            return nil
+        }
+        return connectSocket()
+            .flatMap { channel in
+                self.state = .connecting(channel)
+                return self.writeAndFlush(channel: channel,
+                                          packet: ConnectPacket(clientID: self.clientID,
+                                                                cleanSession: self.cleanSession,
+                                                                keepAliveSec: self.keepAlive))
+            }
     }
     
-    public var closeFuture: EventLoopFuture<Void>? {
-        channel?.closeFuture
+    public var isConnected: Bool {
+        switch state {
+        case let .connected(channel):
+            return channel.isActive
+        default:
+            return false
+        }
+    }
+    
+    var channel: Channel? {
+        switch state {
+        case let .connected(channel),
+            let .connecting(channel):
+            return channel
+        default:
+            return nil
+        }
+    }
+    
+    private func writeAndFlush<Packet: MQTTSendPacket>(channel: Channel, packet: Packet) -> EventLoopFuture<Void> {
+        channel.writeAndFlush(ByteBuffer(bytes: packet.encodedData))
+    }
+    
+    @discardableResult
+    public func disconnect() -> EventLoopFuture<Void>? {
+        switch state {
+        case let .connecting(channel):
+            return channel
+                .close()
+                .always { _ in self.state = .disconnected }
+        case let .connected(channel):
+            return writeAndFlush(channel: channel, packet: DisconnectPacket())
+                .flatMap { channel.close() }
+                .always { _ in self.state = .disconnected }
+        case .disconnected:
+            return nil
+        }
+        
     }
 }
 
 extension MQTTClient: HandlerDelegate {
     func didReceive<P: MQTTRecvPacket>(packet: P) {
-        delegate?.didReceive(packet: packet)
+        switch packet {
+        case is ConnackPacket:
+            switch state {
+            case let .connecting(channel):
+                self.state = .connected(channel)
+            default:
+                break
+            }
+        default:
+            break
+        }
+        delegate?.didReceive(client: self, packet: packet)
     }
 }
