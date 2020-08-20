@@ -4,6 +4,18 @@ public protocol DataEncodable {
     func encode() -> Data
 }
 
+extension Data: DataEncodable {
+    public func encode() -> Data {
+        return self
+    }
+}
+
+extension String: DataEncodable {
+    public func encode() -> Data {
+        return Data(utf8)
+    }
+}
+
 func encodeRemainLen(_ length: Int) -> Data {
     var data = Data(capacity: 4)
     var x = length

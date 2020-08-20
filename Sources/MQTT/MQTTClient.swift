@@ -220,6 +220,19 @@ public class MQTTClient {
             return nil
         }
     }
+    
+    public func publish<Payload: DataEncodable>(dup: Bool, qos: QoS, retain: Bool, topicName: String, identifier: UInt16, payload: Payload) -> EventLoopFuture<Void>? {
+        guard let channel = channel else {
+            return nil
+        }
+        return writeAndFlush(channel: channel,
+                             packet: Publish(dup: dup,
+                                             qos: qos,
+                                             retain: retain,
+                                             topicName: topicName,
+                                             identifier: identifier,
+                                             payload: payload))
+    }
 }
 
 extension MQTTClient: HandlerDelegate {
