@@ -1,47 +1,40 @@
 import Foundation
 
-public protocol MQTTPacket {
-    associatedtype VariableHeader
-    associatedtype Payload
- 
-    var packetType: PacketType { get }
-    var fixedHeader: FixedHeader { get }
-    var variableHeader: VariableHeader? { get }
-    var payload: Payload? { get }
-}
-
-extension MQTTPacket {
-    public var packetType: PacketType {
-        fixedHeader.packetType
+public class MQTTPacket {
+    let fixedHeader: FixedHeader
+    
+    init(packetType: PacketType, flags: UInt8) {
+        self.fixedHeader = FixedHeader(packetType: packetType, flags: flags)
     }
 }
 
-public protocol DataEncodable {
-    var encodedData: Data { get }
-}
-
-public protocol DataDecodable {
-    init(data: Data) throws
-}
-
-public final class DataUnused: DataEncodable, DataDecodable {
-    public var encodedData: Data {
-        fatalError("never used")
+public class MQTTSendPacket: MQTTPacket {
+    func encode(variableHeader: DataEncodable?, payload: DataEncodable?) -> Data {
+        var body = Data()
+        if let variableHeader = variableHeader {
+            body.append(variableHeader.encode())
+        }
+        if let payload = payload {
+            body.append(payload.encode())
+        }
+        var data = Data()
+        data.append(fixedHeader.byte1)
+        data.append(encodeRemainLen(body.count))
+        data.append(body)
+        return data
     }
     
-    public required init(data: Data) throws {
-        fatalError()
+    func encode() -> Data {
+        encode(variableHeader: nil, payload: nil)
     }
 }
 
-public extension MQTTPacket where VariableHeader: DataUnused {
-    var variableHeader: VariableHeader? {
-        return nil
+public class MQTTRecvPacket: MQTTPacket {
+    init(data: Data) throws {
+        fatalError("subclass must override")
     }
-}
-
-public extension MQTTPacket where Payload: DataUnused {
-    var payload: Payload? {
-        return nil
+    
+    override init(packetType: PacketType, flags: UInt8) {
+        super.init(packetType: packetType, flags: flags)
     }
 }

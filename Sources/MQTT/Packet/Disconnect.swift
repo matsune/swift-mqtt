@@ -1,7 +1,5 @@
 class DisconnectPacket: MQTTSendPacket {
-    let fixedHeader: FixedHeader
-    
     init() {
-        self.fixedHeader = FixedHeader(packetType: .disconnect, flags: 0)
+        super.init(packetType: .disconnect, flags: 0)
     }
 }

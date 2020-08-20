@@ -1,11 +1,15 @@
 import Foundation
 
+public protocol DataDecodable {
+    init(data: Data) throws
+}
+
 enum DecodeError: Error {
     case invalidData
     case invalidPacketType
 }
 
-func decode(data: Data) throws -> some MQTTRecvPacket {
+func decode(data: Data) throws -> MQTTRecvPacket {
     if data.isEmpty {
         throw DecodeError.invalidData
     }
@@ -15,27 +19,14 @@ func decode(data: Data) throws -> some MQTTRecvPacket {
     switch packetType {
     case .connack:
         return try ConnackPacket(data: data)
+    case .pingresp:
+        return try PingrespPacket(data: data)
     default:
         throw DecodeError.invalidPacketType
     }
 }
 
-func encode(remainingLength length: Int) -> Data {
-    var data = Data(capacity: 4)
-    var x = length
-    var encodedByte: UInt8 = 0
-    repeat {
-        encodedByte = UInt8(x % 128)
-        x /= 128
-        if x > 0 {
-            encodedByte |= 128
-        }
-        data.append(encodedByte)
-    } while x > 0
-    return data
-}
-
-func decode(remainingLength data: Data) throws -> Int {
+func decodeRemainLen(data: Data) throws -> Int {
     var multiplier = 1
     var value = 0
     var encodedByte: UInt8 = 0

@@ -21,7 +21,7 @@ struct ConnectVariableHeader: DataEncodable {
     // Keep Alive
     let keepAliveSec: UInt16
 
-    var encodedData: Data {
+    func encode() -> Data {
         var data = Data()
         data.write(protocolName)
         data.write(protocolLevel)
@@ -45,14 +45,13 @@ struct Message {
     }
 }
 
-
 struct ConnectPayload: DataEncodable {
     let clientID: String
     let will: Message?
     let username: String?
     let password: String?
     
-    var encodedData: Data {
+    func encode() -> Data {
         var data = Data()
         data.write(clientID)
         if let will = will {
@@ -70,16 +69,12 @@ struct ConnectPayload: DataEncodable {
 }
 
 class ConnectPacket: MQTTSendPacket {
-    typealias VariableHeader = ConnectVariableHeader
-    typealias Payload = ConnectPayload
-    
-    let fixedHeader: FixedHeader
-    var clientID: String
-    var cleanSession: Bool
-    var will: Message?
-    var username: String?
-    var password: String?
-    var keepAliveSec: UInt16
+    let clientID: String
+    let cleanSession: Bool
+    let will: Message?
+    let username: String?
+    let password: String?
+    let keepAliveSec: UInt16
 
     init(
           clientID: String,
@@ -95,11 +90,11 @@ class ConnectPacket: MQTTSendPacket {
         self.username = username
         self.password = password
         self.keepAliveSec = keepAliveSec
-        self.fixedHeader = FixedHeader(packetType: .connect, flags: 0)
+        super.init(packetType: .connect, flags: 0)
     }
     
-    var variableHeader: VariableHeader? {
-        var flags: VariableHeader.Flags = []
+    var variableHeader: ConnectVariableHeader {
+        var flags: ConnectVariableHeader.Flags = []
         if cleanSession {
             flags.insert(.cleanSession)
         }
@@ -116,10 +111,14 @@ class ConnectPacket: MQTTSendPacket {
         if password != nil {
             flags.insert(.hasPassword)
         }
-        return VariableHeader(flags: flags, keepAliveSec: keepAliveSec)
+        return ConnectVariableHeader(flags: flags, keepAliveSec: keepAliveSec)
     }
     
-    var payload: ConnectPayload? {
+    var payload: ConnectPayload {
         ConnectPayload(clientID: clientID, will: will, username: username, password: password)
+    }
+    
+    override func encode() -> Data {
+        encode(variableHeader: variableHeader, payload: payload)
     }
 }

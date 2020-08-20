@@ -6,7 +6,8 @@ class App: MQTTClientDelegate {
     
     init() {
         client = MQTTClient(
-            domain: .ip(host: "localhost", port: 8883),
+            host: "localhost",
+            port: 8883,
             clientID: "swift-mqtt",
             cleanSession: true,
             keepAlive: 30
@@ -19,7 +20,7 @@ class App: MQTTClientDelegate {
         RunLoop.current.run()
     }
     
-    func didReceive<Packet>(client: MQTTClient, packet: Packet) where Packet : MQTTRecvPacket {
+    func mqttClient(_ client: MQTTClient, didReceive packet: MQTTRecvPacket) {
         switch packet {
         case let packet as ConnackPacket:
             print("Connack \(packet)")

@@ -23,20 +23,19 @@ public struct ConnackVariableHeader: DataDecodable {
 public final class ConnackPacket: MQTTRecvPacket {
     public typealias VariableHeader = ConnackVariableHeader
     
-    public let fixedHeader: FixedHeader
-    public let variableHeader: ConnackVariableHeader?
+    public let variableHeader: ConnackVariableHeader
     
     public var returnCode: ConnackVariableHeader.ReturnCode {
-        variableHeader!.returnCode
+        variableHeader.returnCode
     }
 
     public var sessionPresent: Bool {
-        variableHeader!.sessionPresent
+        variableHeader.sessionPresent
     }
     
-    init(data: Data) throws {
-        self.fixedHeader = FixedHeader(packetType: .connack, flags: 0)
-        let remainLen = try decode(remainingLength: data)
+    override init(data: Data) throws {
+        let remainLen = try decodeRemainLen(data: data)
         self.variableHeader = try ConnackVariableHeader(data: data.advanced(by: data.count - remainLen))
+        super.init(packetType: .connack, flags: 0)
     }
 }

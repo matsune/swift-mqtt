@@ -2,7 +2,7 @@ import Foundation
 import NIO
 
 protocol HandlerDelegate: AnyObject {
-    func didReceive<Packet: MQTTRecvPacket>(packet: Packet)
+    func didReceive(packet: MQTTRecvPacket)
 }
 
 class Handler: ChannelInboundHandler {
@@ -47,8 +47,8 @@ public enum ConnectionState {
 public protocol MQTTClientDelegate: AnyObject {
     var delegateDispatchQueue: DispatchQueue { get }
     
-    func didReceive<Packet: MQTTRecvPacket>(client: MQTTClient, packet: Packet)
-    func didChangeState(client: MQTTClient, state: ConnectionState)
+    func mqttClient(_ client: MQTTClient, didReceive packet: MQTTRecvPacket)
+    func mqttClient(_ client: MQTTClient, didChange state: ConnectionState)
 }
 
 public extension MQTTClientDelegate {
@@ -56,8 +56,8 @@ public extension MQTTClientDelegate {
         .main
     }
 
-    func didReceive<Packet: MQTTRecvPacket>(client: MQTTClient, packet: Packet) {}
-    func didChangeState(client: MQTTClient, state: ConnectionState) {}
+    func mqttClient(_ client: MQTTClient, didReceive packet: MQTTRecvPacket){}
+    func mqttClient(_ client: MQTTClient, didChange state: ConnectionState){}
 }
 
 public enum EventLoopGroupProvider {
@@ -66,18 +66,14 @@ public enum EventLoopGroupProvider {
 }
 
 public class MQTTClient {
-    public enum Domain {
-        case ip(host: String, port: Int)
-        case unix(path: String)
-    }
-    
     public enum State {
         case disconnected
         case connecting(Channel)
         case connected(Channel)
     }
     
-    public var domain: Domain
+    public var host: String
+    public var port: Int
     public var clientID: String
     public var cleanSession: Bool
     public var keepAlive: UInt16
@@ -87,37 +83,42 @@ public class MQTTClient {
     public weak var delegate: MQTTClientDelegate?
     
     private let group: EventLoopGroup
+    
     public private(set) var state: State = .disconnected {
         didSet {
             delegate?.delegateDispatchQueue.async {
                 switch self.state {
                 case .disconnected:
-                    self.delegate?.didChangeState(client: self, state: .disconnected)
+                    self.onDisconnect()
+                    self.delegate?.mqttClient(self, didChange: .disconnected)
                 case .connecting:
-                    self.delegate?.didChangeState(client: self, state: .connecting)
-                case .connected:
-                    self.delegate?.didChangeState(client: self, state: .connected)
+                    self.delegate?.mqttClient(self, didChange: .connecting)
+                case let .connected(channel):
+                    self.onConnected()
+                    self.delegate?.mqttClient(self, didChange: .connected)
                 }
             }
         }
     }
     
     public init(
+        host: String,
+        port: Int,
         loopGroupProvider: EventLoopGroupProvider = .createNew,
-        domain: Domain,
         clientID: String = "",
         cleanSession: Bool,
         keepAlive: UInt16,
         username: String? = nil,
         password: String? = nil
     ) {
+        self.host = host
+        self.port = port
         switch loopGroupProvider {
         case .createNew:
             self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         case let .shared(group):
             self.group = group
         }
-        self.domain = domain
         self.clientID = clientID
         self.cleanSession = cleanSession
         self.keepAlive = keepAlive
@@ -139,12 +140,7 @@ public class MQTTClient {
                 handler.delegate = self
                 return channel.pipeline.addHandler(handler)
             }
-        switch domain {
-        case let .ip(host, port):
-            return bootstrap.connect(host: host, port: port)
-        case let .unix(path):
-            return bootstrap.connect(unixDomainSocketPath: path)
-        }
+        return bootstrap.connect(host: host, port: port)
     }
     
     @discardableResult
@@ -184,8 +180,29 @@ public class MQTTClient {
         }
     }
     
+    private var keepAliveTimer: DispatchSourceTimer?
+    
+    private func onConnected() {
+        print("onConnected")
+        keepAliveTimer?.cancel()
+        keepAliveTimer = DispatchSource.makeTimerSource()
+        keepAliveTimer?.schedule(deadline: .now() + Double(keepAlive), repeating: Double(keepAlive))
+        keepAliveTimer?.setEventHandler(handler: { [weak self] in
+            guard let channel = self?.channel else {
+                return
+            }
+            _ = self?.writeAndFlush(channel: channel, packet: PingreqPacket())
+        })
+        keepAliveTimer?.resume()
+    }
+    
+    private func onDisconnect() {
+        keepAliveTimer?.cancel()
+        keepAliveTimer = nil
+    }
+    
     private func writeAndFlush<Packet: MQTTSendPacket>(channel: Channel, packet: Packet) -> EventLoopFuture<Void> {
-        channel.writeAndFlush(ByteBuffer(bytes: packet.encodedData))
+        channel.writeAndFlush(ByteBuffer(bytes: packet.encode()))
     }
     
     @discardableResult
@@ -206,7 +223,7 @@ public class MQTTClient {
 }
 
 extension MQTTClient: HandlerDelegate {
-    func didReceive<P: MQTTRecvPacket>(packet: P) {
+    func didReceive(packet: MQTTRecvPacket) {
         switch packet {
         case let packet as ConnackPacket:
             if case let .connecting(channel) = state, packet.returnCode == .accepted {
@@ -218,7 +235,7 @@ extension MQTTClient: HandlerDelegate {
             break
         }
         delegate?.delegateDispatchQueue.async {
-            self.delegate?.didReceive(client: self, packet: packet)
+            self.delegate?.mqttClient(self, didReceive: packet)
         }
     }
 }
