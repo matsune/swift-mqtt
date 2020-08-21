@@ -1,4 +1,4 @@
-class PingreqPacket: MQTTSendPacket {
+class PingReq: MQTTSendPacket {
     init() {
         super.init(packetType: .pingreq, flags: 0)
     }

@@ -4,25 +4,30 @@ public protocol DataDecodable {
     init(data: Data) throws
 }
 
-enum DecodeError: Error {
-    case invalidData
-    case invalidPacketType
+public enum DecodeError: Error {
+    case malformedData
 }
 
 func decode(data: Data) throws -> MQTTRecvPacket {
     if data.isEmpty {
-        throw DecodeError.invalidData
+        throw DecodeError.malformedData
     }
     guard let packetType = PacketType(rawValue: data[0] >> 4) else {
-        throw DecodeError.invalidPacketType
+        throw DecodeError.malformedData
     }
     switch packetType {
     case .connack:
-        return try ConnackPacket(data: data)
+        return try ConnAck(data: data)
     case .pingresp:
-        return try PingrespPacket(data: data)
+        return try PingResp(data: data)
+    case .puback:
+        return try PubAck(data: data)
+    case .pubrec:
+        return try PubRec(data: data)
+    case .pubcomp:
+        return try PubComp(data: data)
     default:
-        throw DecodeError.invalidPacketType
+        fatalError()
     }
 }
 

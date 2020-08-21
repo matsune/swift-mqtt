@@ -30,4 +30,3 @@ func encodeRemainLen(_ length: Int) -> Data {
     } while x > 0
     return data
 }
-
