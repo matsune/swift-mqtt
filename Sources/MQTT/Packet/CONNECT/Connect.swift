@@ -1,6 +1,6 @@
 import Foundation
 
-class Connect: MQTTSendPacket {
+class Connect: MQTTPacket, MQTTSendPacket {
     let clientID: String
     let cleanSession: Bool
     let will: WillMessage?
@@ -112,7 +112,7 @@ class Connect: MQTTSendPacket {
         Payload(clientID: clientID, will: will, username: username, password: password)
     }
 
-    override func encode() -> Data {
+    func encode() -> Data {
         encode(variableHeader: variableHeader, payload: payload)
     }
 }

@@ -9,23 +9,42 @@ public enum DecodeError: Error {
 }
 
 func decode(data: Data) throws -> MQTTRecvPacket {
-    if data.isEmpty {
-        throw DecodeError.malformedData
+//    if data.isEmpty {
+//        throw DecodeError.malformedData
+//    }
+//    guard let packetType = PacketType(rawValue: data[0] >> 4) else {
+//        throw DecodeError.malformedData
+//    }
+//    let flags = data[0] & 0b1111
+    let fixedHeader = try FixedHeader(data: data)
+    let remainLen = try decodeRemainLen(data: data)
+    // advance size of fixed header
+    let body: Data
+    if data.count > 2 {
+        body = data.advanced(by: 2)[..<remainLen]
+    } else {
+        body = Data()
     }
-    guard let packetType = PacketType(rawValue: data[0] >> 4) else {
-        throw DecodeError.malformedData
-    }
-    switch packetType {
+//    guard body.count == remainLen else {
+//        throw DecodeError.malformedData
+//    }
+    switch fixedHeader.packetType {
     case .connack:
-        return try ConnAck(data: data)
+        return try ConnAck(fixedHeader: fixedHeader, data: body)
     case .pingresp:
-        return try PingResp(data: data)
+        return PingResp(fixedHeader: fixedHeader)
+    case .publish:
+        return Publish(fixedHeader: fixedHeader, data: body)
     case .puback:
-        return try PubAck(data: data)
+        return try PubAck(fixedHeader: fixedHeader, data: body)
     case .pubrec:
-        return try PubRec(data: data)
+        return try PubRec(fixedHeader: fixedHeader, data: body)
     case .pubcomp:
-        return try PubComp(data: data)
+        return try PubComp(fixedHeader: fixedHeader, data: body)
+    case .suback:
+        return try SubAck(fixedHeader: fixedHeader, data: body)
+    case .unsuback:
+        return try UnsubAck(fixedHeader: fixedHeader, data: data)
     default:
         fatalError()
     }

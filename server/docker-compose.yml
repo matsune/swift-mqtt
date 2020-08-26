@@ -1,22 +1,9 @@
-version: '3'
+version: '3.5'
 services:
-  server:
-    image: webcenter/activemq:5.14.3
+  broker:
+    image: eclipse-mosquitto
     ports:
-      # mqtt
-      - "8883:1883"
-      # ui
-      - "8162:8161"
-      # ws
-      - "61614:61614"
-    volumes: ["./mq/data:/data/activemq", "./mq/log:/var/log/activemq"]
-    environment:
-      ACTIVEMQ_REMOVE_DEFAULT_ACCOUNT: "true"
-      ACTIVEMQ_ADMIN_LOGIN: root
-      ACTIVEMQ_ADMIN_PASSWORD: root
-      ACTIVEMQ_OWNER_LOGIN: app
-      ACTIVEMQ_OWNER_PASSWORD: app
-      ACTIVEMQ_MIN_MEMORY: 512
-      ACTIVEMQ_MAX_MEMORY: 2048
-      ACTIVEMQ_ENABLED_AUTH: "true"
-
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf

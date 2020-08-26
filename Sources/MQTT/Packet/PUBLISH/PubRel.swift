@@ -1,7 +1,7 @@
 import Foundation
 
 /// A PUBREL Packet is the response to a PUBREC Packet. It is the third packet of the QoS 2 protocol exchange.
-class PubRel: MQTTSendPacket {
+class PubRel: MQTTPacket, MQTTSendPacket {
     let identifier: UInt16
 
     struct VariableHeader: DataEncodable {
@@ -23,7 +23,7 @@ class PubRel: MQTTSendPacket {
         VariableHeader(identifier: identifier)
     }
 
-    override func encode() -> Data {
+    func encode() -> Data {
         encode(variableHeader: variableHeader, payload: nil)
     }
 }

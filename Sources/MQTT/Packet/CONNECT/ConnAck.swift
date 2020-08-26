@@ -8,7 +8,6 @@ public final class ConnAck: MQTTRecvPacket {
         case serverUnavailable = 3
         case badUserCredential = 4
         case notAuthorized = 5
-        case unknown
     }
 
     struct VariableHeader: DataDecodable {
@@ -16,8 +15,8 @@ public final class ConnAck: MQTTRecvPacket {
         let returnCode: ReturnCode
 
         init(data: Data) throws {
-            sessionPresent = (data[0] & 0b0000_0001) == 1
-            returnCode = ReturnCode(rawValue: data[1]) ?? .unknown
+            sessionPresent = (data[0] & 1) == 1
+            returnCode = ReturnCode(rawValue: data[1])!
         }
     }
 
@@ -31,9 +30,8 @@ public final class ConnAck: MQTTRecvPacket {
         variableHeader.sessionPresent
     }
 
-    required init(data: Data) throws {
-        let remainLen = try decodeRemainLen(data: data)
-        variableHeader = try VariableHeader(data: data.advanced(by: data.count - remainLen))
-        super.init(packetType: .connack, flags: 0)
+    required init(fixedHeader: FixedHeader, data: Data) throws {
+        variableHeader = try VariableHeader(data: data)
+        super.init(fixedHeader: fixedHeader)
     }
 }

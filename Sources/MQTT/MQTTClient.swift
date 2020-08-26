@@ -1,5 +1,6 @@
 import Foundation
 import NIO
+import OSLog
 
 protocol HandlerDelegate: AnyObject {
     func didReceive(packet: MQTTRecvPacket)
@@ -51,27 +52,12 @@ public protocol MQTTClientDelegate: AnyObject {
     func mqttClient(_ client: MQTTClient, didChange state: ConnectionState)
 }
 
-public extension MQTTClientDelegate {
-    var delegateDispatchQueue: DispatchQueue {
-        .main
-    }
-
-    func mqttClient(_: MQTTClient, didReceive _: MQTTRecvPacket) {}
-    func mqttClient(_: MQTTClient, didChange _: ConnectionState) {}
-}
-
 public enum EventLoopGroupProvider {
     case shared(EventLoopGroup)
     case createNew
 }
 
 public class MQTTClient {
-    public enum State {
-        case disconnected
-        case connecting(Channel)
-        case connected(Channel)
-    }
-
     public var host: String
     public var port: Int
     public var clientID: String
@@ -84,7 +70,13 @@ public class MQTTClient {
 
     private let group: EventLoopGroup
 
-    public private(set) var state: State = .disconnected {
+    private enum State {
+        case disconnected
+        case connecting(Channel)
+        case connected(Channel)
+    }
+
+    private var state: State = .disconnected {
         didSet {
             delegate?.delegateDispatchQueue.async {
                 switch self.state {
@@ -98,6 +90,20 @@ public class MQTTClient {
                     self.delegate?.mqttClient(self, didChange: .connected)
                 }
             }
+        }
+    }
+
+    private var _packetIdentifier: UInt16 = 0
+
+    private let lockQueue = DispatchQueue(label: "packet identifier")
+
+    private func nextPacketIdentifier() -> UInt16 {
+        lockQueue.sync {
+            if _packetIdentifier == 0xFFFF {
+                _packetIdentifier = 0
+            }
+            _packetIdentifier += 1
+            return _packetIdentifier
         }
     }
 
@@ -145,19 +151,19 @@ public class MQTTClient {
 
     @discardableResult
     public func connect() -> EventLoopFuture<Void>? {
-        guard !isConnected else {
+        if isConnected {
             return nil
         }
         return connectSocket()
             .flatMap { channel in
                 self.state = .connecting(channel)
-                return self.writeAndFlush(channel: channel,
-                                          packet: Connect(clientID: self.clientID,
-                                                          cleanSession: self.cleanSession,
-                                                          will: nil,
-                                                          username: self.username,
-                                                          password: self.password,
-                                                          keepAliveSec: self.keepAlive))
+                let packet = Connect(clientID: self.clientID,
+                                     cleanSession: self.cleanSession,
+                                     will: nil,
+                                     username: self.username,
+                                     password: self.password,
+                                     keepAliveSec: self.keepAlive)
+                return self.writeAndFlush(channel: channel, packet: packet)
             }
     }
 
@@ -170,16 +176,6 @@ public class MQTTClient {
         }
     }
 
-    var channel: Channel? {
-        switch state {
-        case let .connected(channel),
-             let .connecting(channel):
-            return channel
-        default:
-            return nil
-        }
-    }
-
     private var keepAliveTimer: DispatchSourceTimer?
 
     private func startPingTimer() {
@@ -187,27 +183,37 @@ public class MQTTClient {
         keepAliveTimer = DispatchSource.makeTimerSource()
         keepAliveTimer?.schedule(deadline: .now() + Double(keepAlive), repeating: Double(keepAlive))
         keepAliveTimer?.setEventHandler(handler: { [weak self] in
-            guard let channel = self?.channel else {
-                self?.state = .disconnected
-                return
-            }
-            _ = self?.writeAndFlush(channel: channel, packet: PingReq())
+            _ = self?.tryWrite(packet: PingReq())
         })
         keepAliveTimer?.resume()
     }
-    
+
     private func invalidatePingTimer() {
         keepAliveTimer?.cancel()
         keepAliveTimer = nil
     }
 
+    // write packet or disconnect
+    private func tryWrite<Packet: MQTTSendPacket>(packet: Packet) -> EventLoopFuture<Void>? {
+        switch state {
+        case let .connected(channel):
+            return writeAndFlush(channel: channel, packet: packet)
+        case .connecting:
+            os_log("Client is still trying to connect", log: .default, type: .info)
+            return nil
+        default:
+            return nil
+        }
+    }
+
     private func writeAndFlush<Packet: MQTTSendPacket>(channel: Channel, packet: Packet) -> EventLoopFuture<Void> {
-        channel.writeAndFlush(ByteBuffer(bytes: packet.encode()))
+        let bytes = packet.encode()
+        print([UInt8](bytes))
+        return channel.writeAndFlush(ByteBuffer(bytes: bytes))
             .always {
                 if case let .failure(error) = $0 {
-                    // NIO.ChannelError
-                    print(error)
-                    self.state = .disconnected
+                    os_log("Write Error: %@", log: .default, type: .error, String(describing: error))
+//                    self.state = .disconnected
                 }
             }
     }
@@ -228,12 +234,28 @@ public class MQTTClient {
         }
     }
 
-    public func publish<Payload: DataEncodable>(topic: String, identifier: UInt16, retain: Bool, qos: QoS, payload: Payload) -> EventLoopFuture<Void>? {
-        guard let channel = channel else {
-            return nil
-        }
-        return writeAndFlush(channel: channel,
-                             packet: Publish(topic: topic, identifier: identifier, retain: retain, qos: qos, payload: payload))
+    public func publish(topic: String, identifier: UInt16? = nil, retain: Bool, qos: QoS, payload: DataEncodable) -> EventLoopFuture<Void>? {
+        let packet = Publish(topic: topic, identifier: identifier ?? nextPacketIdentifier(), retain: retain, qos: qos, payload: payload.encode())
+        return tryWrite(packet: packet)
+    }
+
+    public func subscribe(topic: String, qos: QoS, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
+        self.subscribe(topicFilter: Subscribe.TopicFilter(topic: topic, qos: qos), identifier: identifier)
+    }
+    
+    public func subscribe(topicFilter: Subscribe.TopicFilter, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
+        return self.subscribe(topicFilters: [topicFilter])
+    }
+    
+    public func subscribe(topicFilters: [Subscribe.TopicFilter], identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
+        let packet = Subscribe(identifier: identifier ?? nextPacketIdentifier(),
+                               topicFilters: topicFilters)
+        return tryWrite(packet: packet)
+    }
+
+    public func unsubscribe(topic: String, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
+        let packet = Unsubscribe(identifier: identifier ?? nextPacketIdentifier(), topicFilters: [topic])
+        return tryWrite(packet: packet)
     }
 }
 
@@ -246,6 +268,21 @@ extension MQTTClient: HandlerDelegate {
             } else {
                 state = .disconnected
             }
+//        case let packet as Publish:
+//            if let channel = channel {
+//                switch packet.qos {
+//                case .atLeastOnce:
+//                    let identifier = packet.variableHeader.identifier
+//        //                    writeAndFlush(channel: channel, packet: PubAck(identifier: identifier))
+//                case .exactlyOnce:
+//                    let identifier = packet.variableHeader.identifier
+//                default:
+//                    break
+//                }
+//            }
+        case let packet as PubRec:
+            let identifier = packet.variableHeader.identifier
+            tryWrite(packet: PubRel(identifier: identifier))
         default:
             break
         }
