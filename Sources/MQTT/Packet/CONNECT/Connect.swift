@@ -1,12 +1,12 @@
 import Foundation
 
-class Connect: MQTTPacket, MQTTSendPacket {
+final class ConnectPacket: MQTTPacket {
     let clientID: String
     let cleanSession: Bool
     let will: WillMessage?
     let username: String?
     let password: String?
-    let keepAliveSec: UInt16
+    let keepAlive: UInt16
 
     init(
         clientID: String,
@@ -14,14 +14,14 @@ class Connect: MQTTPacket, MQTTSendPacket {
         will: WillMessage?,
         username: String?,
         password: String?,
-        keepAliveSec: UInt16
+        keepAlive: UInt16
     ) {
         self.clientID = clientID
         self.cleanSession = cleanSession
         self.will = will
         self.username = username
         self.password = password
-        self.keepAliveSec = keepAliveSec
+        self.keepAlive = keepAlive
         super.init(packetType: .connect, flags: 0)
     }
 
@@ -30,38 +30,6 @@ class Connect: MQTTPacket, MQTTSendPacket {
         let payload: Data
         let retain: Bool
         let qos: QoS
-    }
-
-    struct VariableHeader: DataEncodable {
-        struct Flags: OptionSet {
-            let rawValue: UInt8
-
-            static let cleanSession = Flags(rawValue: 1 << 1)
-            static let will = Flags(rawValue: 1 << 2)
-            static func qos(_ qos: QoS) -> Flags {
-                Flags(rawValue: qos.rawValue << 3)
-            }
-
-            static let willRetain = Flags(rawValue: 1 << 5)
-            static let hasUsername = Flags(rawValue: 1 << 6)
-            static let hasPassword = Flags(rawValue: 1 << 7)
-        }
-
-        let protocolName: String = "MQTT"
-        let protocolLevel: UInt8 = 0x04
-        // Flags
-        let flags: Flags
-        // Keep Alive
-        let keepAliveSec: UInt16
-
-        func encode() -> Data {
-            var data = Data()
-            data.write(protocolName)
-            data.write(protocolLevel)
-            data.write(flags.rawValue)
-            data.write(keepAliveSec)
-            return data
-        }
     }
 
     var variableHeader: VariableHeader {
@@ -82,7 +50,47 @@ class Connect: MQTTPacket, MQTTSendPacket {
         if password != nil {
             flags.insert(.hasPassword)
         }
-        return VariableHeader(flags: flags, keepAliveSec: keepAliveSec)
+        return VariableHeader(flags: flags, keepAlive: keepAlive)
+    }
+
+    var payload: Payload {
+        Payload(clientID: clientID, will: will, username: username, password: password)
+    }
+
+    override func encode() -> Data {
+        encode(variableHeader: variableHeader, payload: payload)
+    }
+}
+
+extension ConnectPacket {
+    struct VariableHeader: DataEncodable {
+        struct Flags: OptionSet {
+            let rawValue: UInt8
+
+            static let cleanSession = Flags(rawValue: 1 << 1)
+            static let will = Flags(rawValue: 1 << 2)
+            static func qos(_ qos: QoS) -> Flags {
+                Flags(rawValue: qos.rawValue << 3)
+            }
+
+            static let willRetain = Flags(rawValue: 1 << 5)
+            static let hasUsername = Flags(rawValue: 1 << 6)
+            static let hasPassword = Flags(rawValue: 1 << 7)
+        }
+
+        let protocolName: String = "MQTT"
+        let protocolLevel: UInt8 = 0x04
+        let flags: Flags
+        let keepAlive: UInt16
+
+        func encode() -> Data {
+            var data = Data()
+            data.write(protocolName)
+            data.write(protocolLevel)
+            data.write(flags.rawValue)
+            data.write(keepAlive)
+            return data
+        }
     }
 
     struct Payload: DataEncodable {
@@ -106,13 +114,5 @@ class Connect: MQTTPacket, MQTTSendPacket {
             }
             return data
         }
-    }
-
-    var payload: Payload {
-        Payload(clientID: clientID, will: will, username: username, password: password)
-    }
-
-    func encode() -> Data {
-        encode(variableHeader: variableHeader, payload: payload)
     }
 }

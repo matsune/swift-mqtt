@@ -1,6 +1,6 @@
 import Foundation
 
-public final class ConnAck: MQTTRecvPacket {
+public final class ConnAckPacket: MQTTPacket {
     public enum ReturnCode: UInt8 {
         case accepted = 0
         case unaceptable = 1
@@ -8,19 +8,16 @@ public final class ConnAck: MQTTRecvPacket {
         case serverUnavailable = 3
         case badUserCredential = 4
         case notAuthorized = 5
-    }
 
-    struct VariableHeader: DataDecodable {
-        let sessionPresent: Bool
-        let returnCode: ReturnCode
-
-        init(data: Data) throws {
-            sessionPresent = (data[0] & 1) == 1
-            returnCode = ReturnCode(rawValue: data[1])!
+        init(code: UInt8) throws {
+            guard let returnCode = ReturnCode(rawValue: code) else {
+                throw DecodeError.malformedConnAckReturnCode
+            }
+            self = returnCode
         }
     }
 
-    let variableHeader: VariableHeader
+    private let variableHeader: VariableHeader
 
     public var returnCode: ReturnCode {
         variableHeader.returnCode
@@ -30,8 +27,23 @@ public final class ConnAck: MQTTRecvPacket {
         variableHeader.sessionPresent
     }
 
-    required init(fixedHeader: FixedHeader, data: Data) throws {
+    init(fixedHeader: FixedHeader, data: Data) throws {
         variableHeader = try VariableHeader(data: data)
         super.init(fixedHeader: fixedHeader)
+    }
+}
+
+extension ConnAckPacket {
+    struct VariableHeader {
+        let sessionPresent: Bool
+        let returnCode: ReturnCode
+
+        init(data: Data) throws {
+            if data.isEmpty {
+                throw DecodeError.malformedData
+            }
+            sessionPresent = (data[0] & 1) == 1
+            returnCode = try ReturnCode(code: data[1])
+        }
     }
 }

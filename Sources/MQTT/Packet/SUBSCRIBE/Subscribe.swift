@@ -12,7 +12,7 @@ public struct TopicFilter {
     }
 }
 
-class Subscribe: MQTTPacket, MQTTSendPacket {
+class SubscribePacket: MQTTPacket {
     let identifier: UInt16
     let topicFilters: [TopicFilter]
 
@@ -22,6 +22,13 @@ class Subscribe: MQTTPacket, MQTTSendPacket {
         super.init(packetType: .subscribe, flags: 0b0010)
     }
 
+    override func encode() -> Data {
+        encode(variableHeader: VariableHeader(identifier: identifier),
+               payload: Payload(filters: topicFilters))
+    }
+}
+
+extension SubscribePacket {
     struct VariableHeader: DataEncodable {
         let identifier: UInt16
 
@@ -40,11 +47,5 @@ class Subscribe: MQTTPacket, MQTTSendPacket {
             filters.forEach { data.append($0.encode()) }
             return data
         }
-    }
-
-    
-
-    func encode() -> Data {
-        encode(variableHeader: VariableHeader(identifier: identifier), payload: Payload(filters: topicFilters))
     }
 }

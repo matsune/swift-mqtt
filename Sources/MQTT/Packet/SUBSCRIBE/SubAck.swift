@@ -1,39 +1,46 @@
 import Foundation
 
-class SubAck: MQTTRecvPacket {
-    enum ReturnCode {
-        case success(QoS)
-        case failure
-    }
-
-    struct VariableHeader: DataDecodable {
-        let identifier: UInt16
-
-        init(data: Data) throws {
-            identifier = UInt16(data[0] << 8) | UInt16(data[1])
-        }
-    }
-
-    let variableHeader: VariableHeader
+final class SubAckPacket: MQTTPacket {
+    private let variableHeader: VariableHeader
     let returnCodes: [ReturnCode]
+
+    var identifier: UInt16 {
+        variableHeader.identifier
+    }
 
     init(fixedHeader: FixedHeader, data: Data) throws {
         variableHeader = try VariableHeader(data: data)
         let payloadData = data.advanced(by: 2)
-        returnCodes = try payloadData.map {
-            switch $0 {
-            case 0x00:
-                return ReturnCode.success(QOS.0)
-            case 0x01:
-                return ReturnCode.success(QOS.1)
-            case 0x02:
-                return ReturnCode.success(QOS.2)
+        returnCodes = try payloadData.map { try ReturnCode(code: $0) }
+        super.init(fixedHeader: fixedHeader)
+    }
+}
+
+extension SubAckPacket {
+    enum ReturnCode {
+        case success(QoS)
+        case failure
+
+        init(code: UInt8) throws {
+            switch code {
+            case 0x00, 0x01, 0x02:
+                self = .success(try QoS(value: code))
             case 0x80:
-                return ReturnCode.failure
+                self = .failure
             default:
-                throw DecodeError.malformedData
+                throw DecodeError.malformedSubAckReturnCode
             }
         }
-        super.init(fixedHeader: fixedHeader)
+    }
+
+    struct VariableHeader {
+        let identifier: UInt16
+
+        init(data: Data) throws {
+            if data.count < 2 {
+                throw DecodeError.malformedData
+            }
+            identifier = UInt16(data[0] << 8) | UInt16(data[1])
+        }
     }
 }

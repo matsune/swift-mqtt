@@ -1,4 +1,4 @@
-public enum PacketType: UInt8 {
+public enum MQTTPacketType: UInt8 {
     /// Client request to connect to Server
     case connect = 0x01
     /// Connect acknowledgment
@@ -27,4 +27,11 @@ public enum PacketType: UInt8 {
     case pingresp = 0x0D
     /// Client is disconnecting
     case disconnect = 0x0E
+
+    init(packet: UInt8) throws {
+        guard let type = MQTTPacketType(rawValue: packet) else {
+            throw DecodeError.malformedPacketType
+        }
+        self = type
+    }
 }

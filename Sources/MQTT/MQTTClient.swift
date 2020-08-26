@@ -3,16 +3,18 @@ import NIO
 import OSLog
 
 protocol HandlerDelegate: AnyObject {
-    func didReceive(packet: MQTTRecvPacket)
+    func didReceive(packet: MQTTPacket)
+    func decodeError(_ error: Error)
 }
 
-class Handler: ChannelInboundHandler {
+final class Handler: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
 
     var clientID: String
     var cleanSession: Bool
     var keepAlive: UInt16
 
+    let decoder = MQTTDecoder()
     weak var delegate: HandlerDelegate?
 
     init(
@@ -30,10 +32,10 @@ class Handler: ChannelInboundHandler {
         if let bytes = buf.readBytes(length: buf.readableBytes) {
             let data = Data(bytes)
             do {
-                let packet = try decode(data: data)
+                let packet = try decoder.decode(data: data)
                 delegate?.didReceive(packet: packet)
             } catch {
-                print("error \(error)")
+                delegate?.decodeError(error)
             }
         }
     }
@@ -48,7 +50,7 @@ public enum ConnectionState {
 public protocol MQTTClientDelegate: AnyObject {
     var delegateDispatchQueue: DispatchQueue { get }
 
-    func mqttClient(_ client: MQTTClient, didReceive packet: MQTTRecvPacket)
+    func mqttClient(_ client: MQTTClient, didReceive packet: MQTTPacket)
     func mqttClient(_ client: MQTTClient, didChange state: ConnectionState)
 }
 
@@ -157,12 +159,12 @@ public class MQTTClient {
         return connectSocket()
             .flatMap { channel in
                 self.state = .connecting(channel)
-                let packet = Connect(clientID: self.clientID,
-                                     cleanSession: self.cleanSession,
-                                     will: nil,
-                                     username: self.username,
-                                     password: self.password,
-                                     keepAliveSec: self.keepAlive)
+                let packet = ConnectPacket(clientID: self.clientID,
+                                           cleanSession: self.cleanSession,
+                                           will: nil,
+                                           username: self.username,
+                                           password: self.password,
+                                           keepAlive: self.keepAlive)
                 return self.writeAndFlush(channel: channel, packet: packet)
             }
     }
@@ -183,7 +185,7 @@ public class MQTTClient {
         keepAliveTimer = DispatchSource.makeTimerSource()
         keepAliveTimer?.schedule(deadline: .now() + Double(keepAlive), repeating: Double(keepAlive))
         keepAliveTimer?.setEventHandler(handler: { [weak self] in
-            _ = self?.tryWrite(packet: PingReq())
+            _ = self?.tryWrite(packet: PingReqPacket())
         })
         keepAliveTimer?.resume()
     }
@@ -194,7 +196,7 @@ public class MQTTClient {
     }
 
     // write packet or disconnect
-    private func tryWrite<Packet: MQTTSendPacket>(packet: Packet) -> EventLoopFuture<Void>? {
+    private func tryWrite(packet: MQTTPacket) -> EventLoopFuture<Void>? {
         switch state {
         case let .connected(channel):
             return writeAndFlush(channel: channel, packet: packet)
@@ -206,14 +208,14 @@ public class MQTTClient {
         }
     }
 
-    private func writeAndFlush<Packet: MQTTSendPacket>(channel: Channel, packet: Packet) -> EventLoopFuture<Void> {
+    private func writeAndFlush(channel: Channel, packet: MQTTPacket) -> EventLoopFuture<Void> {
         let bytes = packet.encode()
         print([UInt8](bytes))
         return channel.writeAndFlush(ByteBuffer(bytes: bytes))
             .always {
                 if case let .failure(error) = $0 {
                     os_log("Write Error: %@", log: .default, type: .error, String(describing: error))
-//                    self.state = .disconnected
+                    self.state = .disconnected
                 }
             }
     }
@@ -226,7 +228,7 @@ public class MQTTClient {
                 .close()
                 .always { _ in self.state = .disconnected }
         case let .connected(channel):
-            return writeAndFlush(channel: channel, packet: Disconnect())
+            return writeAndFlush(channel: channel, packet: DisconnectPacket())
                 .flatMap { channel.close() }
                 .always { _ in self.state = .disconnected }
         case .disconnected:
@@ -235,59 +237,51 @@ public class MQTTClient {
     }
 
     public func publish(topic: String, identifier: UInt16? = nil, retain: Bool, qos: QoS, payload: DataEncodable) -> EventLoopFuture<Void>? {
-        let packet = Publish(topic: topic, identifier: identifier ?? nextPacketIdentifier(), retain: retain, qos: qos, payload: payload.encode())
+        let packet = PublishPacket(topic: topic, identifier: identifier ?? nextPacketIdentifier(), retain: retain, qos: qos, payload: payload.encode())
         return tryWrite(packet: packet)
     }
 
     public func subscribe(topic: String, qos: QoS, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
-        self.subscribe(topicFilter: Subscribe.TopicFilter(topic: topic, qos: qos), identifier: identifier)
+        subscribe(topicFilter: TopicFilter(topic: topic, qos: qos), identifier: identifier)
     }
-    
-    public func subscribe(topicFilter: Subscribe.TopicFilter, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
-        return self.subscribe(topicFilters: [topicFilter])
+
+    public func subscribe(topicFilter: TopicFilter, identifier _: UInt16? = nil) -> EventLoopFuture<Void>? {
+        return subscribe(topicFilters: [topicFilter])
     }
-    
-    public func subscribe(topicFilters: [Subscribe.TopicFilter], identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
-        let packet = Subscribe(identifier: identifier ?? nextPacketIdentifier(),
-                               topicFilters: topicFilters)
+
+    public func subscribe(topicFilters: [TopicFilter], identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
+        let packet = SubscribePacket(identifier: identifier ?? nextPacketIdentifier(),
+                                     topicFilters: topicFilters)
         return tryWrite(packet: packet)
     }
 
     public func unsubscribe(topic: String, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
-        let packet = Unsubscribe(identifier: identifier ?? nextPacketIdentifier(), topicFilters: [topic])
+        let packet = UnsubscribePacket(identifier: identifier ?? nextPacketIdentifier(), topicFilters: [topic])
         return tryWrite(packet: packet)
     }
 }
 
 extension MQTTClient: HandlerDelegate {
-    func didReceive(packet: MQTTRecvPacket) {
+    func didReceive(packet: MQTTPacket) {
         switch packet {
-        case let packet as ConnAck:
+        case let packet as ConnAckPacket:
             if case let .connecting(channel) = state, packet.returnCode == .accepted {
                 self.state = .connected(channel)
             } else {
                 state = .disconnected
             }
-//        case let packet as Publish:
-//            if let channel = channel {
-//                switch packet.qos {
-//                case .atLeastOnce:
-//                    let identifier = packet.variableHeader.identifier
-//        //                    writeAndFlush(channel: channel, packet: PubAck(identifier: identifier))
-//                case .exactlyOnce:
-//                    let identifier = packet.variableHeader.identifier
-//                default:
-//                    break
-//                }
-//            }
-        case let packet as PubRec:
-            let identifier = packet.variableHeader.identifier
-            tryWrite(packet: PubRel(identifier: identifier))
+        case let packet as PubRecPacket:
+            let identifier = packet.identifier
+            tryWrite(packet: PubRelPacket(identifier: identifier))
         default:
             break
         }
         delegate?.delegateDispatchQueue.async {
             self.delegate?.mqttClient(self, didReceive: packet)
         }
+    }
+
+    func decodeError(_ error: Error) {
+        print(error)
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-class Unsubscribe: MQTTPacket, MQTTSendPacket {
+class UnsubscribePacket: MQTTPacket {
     let identifier: UInt16
     let topicFilters: [String]
 
@@ -8,6 +8,25 @@ class Unsubscribe: MQTTPacket, MQTTSendPacket {
         self.identifier = identifier
         self.topicFilters = topicFilters
         super.init(packetType: .unsubscribe, flags: 0b0010)
+    }
+
+    override func encode() -> Data {
+        encode(variableHeader: VariableHeader(identifier: identifier),
+               payload: Payload(filters: topicFilters))
+    }
+}
+
+extension UnsubscribePacket {
+    struct TopicFilter: DataEncodable {
+        let topic: String
+        let qos: QoS
+
+        func encode() -> Data {
+            var data = Data()
+            data.write(topic)
+            data.write(qos.rawValue)
+            return data
+        }
     }
 
     struct VariableHeader: DataEncodable {
@@ -25,24 +44,8 @@ class Unsubscribe: MQTTPacket, MQTTSendPacket {
 
         func encode() -> Data {
             var data = Data()
-            filters.forEach { data.append($0.encode()) }
+            filters.forEach { data.write($0) }
             return data
         }
-    }
-
-    struct TopicFilter: DataEncodable {
-        let topic: String
-        let qos: QoS
-
-        func encode() -> Data {
-            var data = Data()
-            data.write(topic)
-            data.write(qos.rawValue)
-            return data
-        }
-    }
-
-    func encode() -> Data {
-        encode(variableHeader: VariableHeader(identifier: identifier), payload: Payload(filters: topicFilters))
     }
 }
