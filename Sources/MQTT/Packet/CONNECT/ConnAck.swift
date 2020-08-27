@@ -29,7 +29,7 @@ extension ConnAckPacket {
         let sessionPresent: Bool
         let returnCode: ReturnCode
     }
-    
+
     public enum ReturnCode: UInt8 {
         case accepted = 0
         case unaceptable = 1

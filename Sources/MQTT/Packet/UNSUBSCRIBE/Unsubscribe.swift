@@ -5,11 +5,11 @@ import Foundation
 class UnsubscribePacket: MQTTPacket {
     let variableHeader: VariableHeader
     let payload: Payload
-    
+
     var identifier: UInt16 {
         variableHeader.identifier
     }
-    
+
     var topicFilters: [String] {
         payload.topicFilters
     }

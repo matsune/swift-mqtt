@@ -35,8 +35,8 @@ class App: MQTTClientDelegate {
             client.subscribe(topic: "a", qos: QOS.0)
             client.publish(topic: "a", retain: false, qos: QOS.0, payload: "abc")
             queue.asyncAfter(deadline: .now() + 5) {
-                self.client.disconnect()?.whenComplete({ res in
-                    print("disconnect \(res) \(client.isConnected)")
+                self.client.disconnect().whenComplete({ res in
+                    print("disconnect \(res)")
                 })
                 sem.signal()
             }

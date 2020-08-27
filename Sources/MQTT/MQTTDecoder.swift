@@ -47,9 +47,7 @@ final class MQTTDecoder {
         var multiplier = 1
         var value = 0
         var encodedByte: UInt8 = 0
-//        var cursor = 0
         repeat {
-//            cursor += 1
             guard data.hasSize(1) else {
                 throw DecodeError.malformedData
             }

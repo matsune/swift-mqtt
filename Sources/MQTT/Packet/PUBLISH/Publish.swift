@@ -9,11 +9,11 @@ public final class PublishPacket: MQTTPacket {
     public var qos: QoS {
         QoS(rawValue: fixedHeader.flags >> 1 & 0b11)!
     }
-    
+
     public var topic: String {
         variableHeader.topic
     }
-    
+
     public var identifier: UInt16? {
         variableHeader.identifier
     }

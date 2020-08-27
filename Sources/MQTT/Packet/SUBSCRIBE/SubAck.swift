@@ -4,7 +4,7 @@ import Foundation
 /// [SUBACK – Subscribe acknowledgement](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718068)
 public final class SubAckPacket: MQTTPacket {
     private let variableHeader: VariableHeader
-    
+
     public let returnCodes: [ReturnCode]
 
     public var identifier: UInt16 {
