@@ -1,3 +1,5 @@
+/// # Reference
+/// [Quality of Service levels and protocol flows](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718099)
 public enum QoS: UInt8 {
     case atMostOnce = 0
     case atLeastOnce = 1

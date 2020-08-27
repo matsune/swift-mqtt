@@ -1,23 +1,28 @@
 import Foundation
 
-final class SubAckPacket: MQTTPacket {
+/// # Reference
+/// [SUBACK – Subscribe acknowledgement](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718068)
+public final class SubAckPacket: MQTTPacket {
     private let variableHeader: VariableHeader
-    let returnCodes: [ReturnCode]
+    
+    public let returnCodes: [ReturnCode]
 
-    var identifier: UInt16 {
+    public var identifier: UInt16 {
         variableHeader.identifier
     }
 
-    init(fixedHeader: FixedHeader, data: Data) throws {
-        variableHeader = try VariableHeader(data: data)
-        let payloadData = data.advanced(by: 2)
-        returnCodes = try payloadData.map { try ReturnCode(code: $0) }
+    init(fixedHeader: FixedHeader, data: inout Data) throws {
+        guard data.hasSize(2) else {
+            throw DecodeError.malformedData
+        }
+        variableHeader = VariableHeader(identifier: data.read2BytesInt())
+        returnCodes = try data.map { try ReturnCode(code: $0) }
         super.init(fixedHeader: fixedHeader)
     }
 }
 
 extension SubAckPacket {
-    enum ReturnCode {
+    public enum ReturnCode {
         case success(QoS)
         case failure
 
@@ -35,12 +40,5 @@ extension SubAckPacket {
 
     struct VariableHeader {
         let identifier: UInt16
-
-        init(data: Data) throws {
-            if data.count < 2 {
-                throw DecodeError.malformedData
-            }
-            identifier = UInt16(data[0] << 8) | UInt16(data[1])
-        }
     }
 }

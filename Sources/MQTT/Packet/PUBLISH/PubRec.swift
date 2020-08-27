@@ -1,6 +1,7 @@
 import Foundation
 
-/// A PUBREC Packet is the response to a PUBLISH Packet with QoS 2. It is the second packet of the QoS 2 protocol exchange.
+/// # Reference
+/// [PUBREC – Publish received (QoS 2 publish received, part 1)](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718048)
 public final class PubRecPacket: MQTTPacket {
     private let variableHeader: VariableHeader
 
@@ -8,37 +9,17 @@ public final class PubRecPacket: MQTTPacket {
         variableHeader.identifier
     }
 
-    init(fixedHeader: FixedHeader, data: Data) throws {
-        if data.count < 2 {
+    init(fixedHeader: FixedHeader, data: inout Data) throws {
+        guard data.hasSize(2) else {
             throw DecodeError.malformedData
         }
-        let identifier = UInt16(data[0]) << 8 | UInt16(data[1])
-        variableHeader = VariableHeader(identifier: identifier)
+        variableHeader = VariableHeader(identifier: data.read2BytesInt())
         super.init(fixedHeader: fixedHeader)
-    }
-
-    init(identifier: UInt16) {
-        variableHeader = VariableHeader(identifier: identifier)
-        super.init(fixedHeader: FixedHeader(packetType: .puback, flags: 0))
-    }
-
-    override func encode() -> Data {
-        encode(variableHeader: variableHeader, payload: nil)
     }
 }
 
 extension PubRecPacket {
-    struct VariableHeader: DataEncodable {
+    struct VariableHeader {
         let identifier: UInt16
-
-        init(identifier: UInt16) {
-            self.identifier = identifier
-        }
-
-        func encode() -> Data {
-            var data = Data()
-            data.write(identifier)
-            return data
-        }
     }
 }

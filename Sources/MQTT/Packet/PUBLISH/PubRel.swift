@@ -1,18 +1,19 @@
 import Foundation
 
-/// A PUBREL Packet is the response to a PUBREC Packet. It is the third packet of the QoS 2 protocol exchange.
+/// # Reference
+/// [PUBREL – Publish release (QoS 2 publish received, part 2)](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718053)
 final class PubRelPacket: MQTTPacket {
-    let identifier: UInt16
+    let variableHeader: VariableHeader
+    
+    var identifier: UInt16 {
+        variableHeader.identifier
+    }
 
     init(identifier: UInt16) {
-        self.identifier = identifier
+        self.variableHeader = VariableHeader(identifier: identifier)
         super.init(packetType: .pubrel, flags: 0b0010)
     }
-
-    var variableHeader: VariableHeader {
-        VariableHeader(identifier: identifier)
-    }
-
+    
     override func encode() -> Data {
         encode(variableHeader: variableHeader, payload: nil)
     }

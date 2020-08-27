@@ -1,30 +1,27 @@
 import Foundation
 
-public struct TopicFilter {
-    let topic: String
-    let qos: QoS
-
-    func encode() -> Data {
-        var data = Data()
-        data.write(topic)
-        data.write(qos.rawValue)
-        return data
+/// # Reference
+/// [SUBSCRIBE - Subscribe to topics](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718063)
+final class SubscribePacket: MQTTPacket {
+    let variableHeader: VariableHeader
+    let payload: Payload
+    
+    var identifier: UInt16 {
+        variableHeader.identifier
     }
-}
-
-class SubscribePacket: MQTTPacket {
-    let identifier: UInt16
-    let topicFilters: [TopicFilter]
+    
+    var topicFilters: [TopicFilter] {
+        payload.topicFilters
+    }
 
     init(identifier: UInt16, topicFilters: [TopicFilter]) {
-        self.identifier = identifier
-        self.topicFilters = topicFilters
+        variableHeader = VariableHeader(identifier: identifier)
+        payload = Payload(topicFilters: topicFilters)
         super.init(packetType: .subscribe, flags: 0b0010)
     }
 
     override func encode() -> Data {
-        encode(variableHeader: VariableHeader(identifier: identifier),
-               payload: Payload(filters: topicFilters))
+        encode(variableHeader: variableHeader, payload: payload)
     }
 }
 
@@ -40,12 +37,24 @@ extension SubscribePacket {
     }
 
     struct Payload: DataEncodable {
-        let filters: [TopicFilter]
+        let topicFilters: [TopicFilter]
 
         func encode() -> Data {
             var data = Data()
-            filters.forEach { data.append($0.encode()) }
+            topicFilters.forEach { data.append($0.encode()) }
             return data
         }
+    }
+}
+
+public struct TopicFilter {
+    let topic: String
+    let qos: QoS
+
+    func encode() -> Data {
+        var data = Data()
+        data.write(topic)
+        data.write(qos.rawValue)
+        return data
     }
 }

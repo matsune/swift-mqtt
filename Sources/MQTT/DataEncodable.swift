@@ -9,3 +9,9 @@ extension Data: DataEncodable {
         self
     }
 }
+
+extension String: DataEncodable {
+    public func encode() -> Data {
+        Data(utf8)
+    }
+}

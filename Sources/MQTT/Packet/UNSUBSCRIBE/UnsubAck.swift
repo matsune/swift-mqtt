@@ -1,5 +1,7 @@
 import Foundation
 
+/// # Reference
+/// [UNSUBACK – Unsubscribe acknowledgement](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718077)
 final class UnsubAckPacket: MQTTPacket {
     private let variableHeader: VariableHeader
 
@@ -7,8 +9,11 @@ final class UnsubAckPacket: MQTTPacket {
         variableHeader.identifier
     }
 
-    init(fixedHeader: FixedHeader, data: Data) throws {
-        variableHeader = try VariableHeader(data: data)
+    init(fixedHeader: FixedHeader, data: inout Data) throws {
+        guard data.hasSize(2) else {
+            throw DecodeError.malformedData
+        }
+        variableHeader = VariableHeader(identifier: data.read2BytesInt())
         super.init(fixedHeader: fixedHeader)
     }
 }
@@ -16,12 +21,5 @@ final class UnsubAckPacket: MQTTPacket {
 extension UnsubAckPacket {
     struct VariableHeader {
         let identifier: UInt16
-
-        init(data: Data) throws {
-            if data.count < 2 {
-                throw DecodeError.malformedData
-            }
-            identifier = UInt16(data[0] << 8) | UInt16(data[1])
-        }
     }
 }

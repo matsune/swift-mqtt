@@ -1,3 +1,5 @@
+/// # Reference
+/// [MQTT Control Packet Type](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718021)
 public enum MQTTPacketType: UInt8 {
     /// Client request to connect to Server
     case connect = 0x01

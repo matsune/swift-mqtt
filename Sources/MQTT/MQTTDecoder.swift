@@ -9,52 +9,51 @@ public enum DecodeError: Error {
 }
 
 final class MQTTDecoder {
-    func decode(data: Data) throws -> MQTTPacket {
-        if data.isEmpty {
+    func decode(data: inout Data) throws -> MQTTPacket {
+        guard data.hasSize(1) else {
             throw DecodeError.malformedData
         }
-        let packetType = try MQTTPacketType(packet: data[0] >> 4)
-        let flags = data[0] & 0x0F
+        let byte1 = data.read1ByteInt()
+        let packetType = try MQTTPacketType(packet: byte1 >> 4)
+        let flags = byte1 & 0x0F
         let fixedHeader = FixedHeader(packetType: packetType, flags: flags)
-        let remainLen = decodeRemainLen(data: data)
-        // advance size of fixed header
-        let body: Data
-        if data.count > 2 {
-            body = data.advanced(by: 2)[..<remainLen]
-        } else {
-            body = Data()
+        let remainLen = try decodeRemainLen(data: &data)
+        guard data.count == remainLen else {
+            throw DecodeError.malformedData
         }
-        print(packetType)
         switch fixedHeader.packetType {
         case .connack:
-            return try ConnAckPacket(fixedHeader: fixedHeader, data: body)
+            return try ConnAckPacket(fixedHeader: fixedHeader, data: &data)
         case .pingresp:
             return PingRespPacket(fixedHeader: fixedHeader)
         case .publish:
-            return try PublishPacket(fixedHeader: fixedHeader, data: body)
+            return try PublishPacket(fixedHeader: fixedHeader, data: &data)
         case .puback:
-            return try PubAckPacket(fixedHeader: fixedHeader, data: body)
+            return try PubAckPacket(fixedHeader: fixedHeader, data: &data)
         case .pubrec:
-            return try PubRecPacket(fixedHeader: fixedHeader, data: body)
+            return try PubRecPacket(fixedHeader: fixedHeader, data: &data)
         case .pubcomp:
-            return try PubCompPacket(fixedHeader: fixedHeader, data: body)
+            return try PubCompPacket(fixedHeader: fixedHeader, data: &data)
         case .suback:
-            return try SubAckPacket(fixedHeader: fixedHeader, data: body)
+            return try SubAckPacket(fixedHeader: fixedHeader, data: &data)
         case .unsuback:
-            return try UnsubAckPacket(fixedHeader: fixedHeader, data: data)
+            return try UnsubAckPacket(fixedHeader: fixedHeader, data: &data)
         default:
-            fatalError()
+            throw DecodeError.malformedData
         }
     }
 
-    private func decodeRemainLen(data: Data) -> Int {
+    private func decodeRemainLen(data: inout Data) throws -> Int {
         var multiplier = 1
         var value = 0
         var encodedByte: UInt8 = 0
-        var cursor = 0
+//        var cursor = 0
         repeat {
-            cursor += 1
-            encodedByte = data[cursor]
+//            cursor += 1
+            guard data.hasSize(1) else {
+                throw DecodeError.malformedData
+            }
+            encodedByte = data.read1ByteInt()
             value += (Int(encodedByte) & 127) * multiplier
             multiplier *= 128
             if multiplier > 128 * 128 * 128 {

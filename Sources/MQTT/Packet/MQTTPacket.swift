@@ -1,5 +1,9 @@
 import Foundation
 
+/// MQTT Control Packet
+///
+/// # Reference
+/// [MQTT Control Packet format](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718018)
 public class MQTTPacket {
     let fixedHeader: FixedHeader
 

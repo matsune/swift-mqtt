@@ -1,3 +1,2 @@
 # swift-mqtt
-
-A description of this package.
+MQTT Version 3.1.1

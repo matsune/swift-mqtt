@@ -30,9 +30,9 @@ final class Handler: ChannelInboundHandler {
     func channelRead(context _: ChannelHandlerContext, data: NIOAny) {
         var buf = unwrapInboundIn(data)
         if let bytes = buf.readBytes(length: buf.readableBytes) {
-            let data = Data(bytes)
+            var data = Data(bytes)
             do {
-                let packet = try decoder.decode(data: data)
+                let packet = try decoder.decode(data: &data)
                 delegate?.didReceive(packet: packet)
             } catch {
                 delegate?.decodeError(error)
@@ -65,6 +65,7 @@ public class MQTTClient {
     public var clientID: String
     public var cleanSession: Bool
     public var keepAlive: UInt16
+    public var willMessage: PublishMessage?
     public var username: String?
     public var password: String?
 
@@ -116,6 +117,7 @@ public class MQTTClient {
         clientID: String = "",
         cleanSession: Bool,
         keepAlive: UInt16,
+        willMessage: PublishMessage? = nil,
         username: String? = nil,
         password: String? = nil
     ) {
@@ -130,6 +132,7 @@ public class MQTTClient {
         self.clientID = clientID
         self.cleanSession = cleanSession
         self.keepAlive = keepAlive
+        self.willMessage = willMessage
         self.username = username
         self.password = password
     }
@@ -161,7 +164,7 @@ public class MQTTClient {
                 self.state = .connecting(channel)
                 let packet = ConnectPacket(clientID: self.clientID,
                                            cleanSession: self.cleanSession,
-                                           will: nil,
+                                           will: self.willMessage,
                                            username: self.username,
                                            password: self.password,
                                            keepAlive: self.keepAlive)
@@ -236,8 +239,18 @@ public class MQTTClient {
         }
     }
 
-    public func publish(topic: String, identifier: UInt16? = nil, retain: Bool, qos: QoS, payload: DataEncodable) -> EventLoopFuture<Void>? {
-        let packet = PublishPacket(topic: topic, identifier: identifier ?? nextPacketIdentifier(), retain: retain, qos: qos, payload: payload.encode())
+    public func publish(message: PublishMessage, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
+        publish(topic: message.topic, retain: message.retain, qos: message.qos, payload: message.payload, identifier: identifier)
+    }
+
+    public func publish(topic: String, retain: Bool, qos: QoS, payload: DataEncodable, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
+        let id: UInt16?
+        if qos == .atMostOnce {
+            id = nil
+        } else {
+            id = identifier ?? nextPacketIdentifier()
+        }
+        let packet = PublishPacket(topic: topic, identifier: id, retain: retain, qos: qos, payload: payload.encode())
         return tryWrite(packet: packet)
     }
 

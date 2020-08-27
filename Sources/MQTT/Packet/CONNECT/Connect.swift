@@ -1,9 +1,25 @@
 import Foundation
 
+public struct PublishMessage {
+    let topic: String
+    let payload: DataEncodable
+    let retain: Bool
+    let qos: QoS
+
+    public init(topic: String, payload: DataEncodable, retain: Bool, qos: QoS) {
+        self.topic = topic
+        self.payload = payload
+        self.retain = retain
+        self.qos = qos
+    }
+}
+
+/// # Reference
+/// [CONNECT – Client requests a connection to a Server](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718028)
 final class ConnectPacket: MQTTPacket {
     let clientID: String
     let cleanSession: Bool
-    let will: WillMessage?
+    let will: PublishMessage?
     let username: String?
     let password: String?
     let keepAlive: UInt16
@@ -11,7 +27,7 @@ final class ConnectPacket: MQTTPacket {
     init(
         clientID: String,
         cleanSession: Bool,
-        will: WillMessage?,
+        will: PublishMessage?,
         username: String?,
         password: String?,
         keepAlive: UInt16
@@ -23,13 +39,6 @@ final class ConnectPacket: MQTTPacket {
         self.password = password
         self.keepAlive = keepAlive
         super.init(packetType: .connect, flags: 0)
-    }
-
-    struct WillMessage {
-        let topic: String
-        let payload: Data
-        let retain: Bool
-        let qos: QoS
     }
 
     var variableHeader: VariableHeader {
@@ -95,7 +104,7 @@ extension ConnectPacket {
 
     struct Payload: DataEncodable {
         let clientID: String
-        let will: WillMessage?
+        let will: PublishMessage?
         let username: String?
         let password: String?
 
@@ -104,7 +113,9 @@ extension ConnectPacket {
             data.write(clientID)
             if let will = will {
                 data.write(will.topic)
-                data.append(will.payload)
+                let payload = will.payload.encode()
+                data.write(UInt16(payload.count))
+                data.append(payload)
             }
             if let username = username {
                 data.write(username)
