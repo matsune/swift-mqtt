@@ -198,15 +198,11 @@ public class MQTTClient {
         case .connectingBroker:
             throwErrorToDelegate(MQTTError.brokerConnectPending, disconnect: true)
         case .disconnected:
-            channelState = .connectingChannel
             startTimeoutTimer()
+            channelState = .connectingChannel
             connectChannnel()
-                .flatMap { channel -> EventLoopFuture<Void> in
-                    self.channelState = .connectingBroker(channel)
-                    return self.connectBroker(channel: channel)
-                }
-                .whenFailure { [weak self] in
-                    self?.throwErrorToDelegate($0, disconnect: true)
+                .whenFailure {
+                    self.throwErrorToDelegate($0, disconnect: true)
                 }
         }
     }
@@ -330,6 +326,20 @@ extension MQTTClient: MQTTChannelHandlerDelegate {
 
     func didCatch(decodeError error: DecodeError) {
         throwErrorToDelegate(MQTTError.decodeError(error), disconnect: false)
+    }
+
+    func channelActive(channel: Channel) {
+        switch channelState {
+        case .connectingChannel:
+            channelState = .connectingBroker(channel)
+            connectBroker(channel: channel).whenFailure { self.throwErrorToDelegate($0, disconnect: true) }
+        default:
+            break
+        }
+    }
+
+    func channelInactive() {
+        disconnect()
     }
 }
 

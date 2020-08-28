@@ -4,6 +4,8 @@ import NIO
 protocol MQTTChannelHandlerDelegate: AnyObject {
     func didReceive(packet: MQTTPacket)
     func didCatch(decodeError error: DecodeError)
+    func channelActive(channel: Channel)
+    func channelInactive()
 }
 
 final class MQTTChannelHandler: ChannelInboundHandler {
@@ -40,5 +42,13 @@ final class MQTTChannelHandler: ChannelInboundHandler {
                 fatalError("Error while decoding packet data: \(error.localizedDescription)")
             }
         }
+    }
+
+    func channelActive(context: ChannelHandlerContext) {
+        delegate?.channelActive(channel: context.channel)
+    }
+
+    func channelInactive(context _: ChannelHandlerContext) {
+        delegate?.channelInactive()
     }
 }
