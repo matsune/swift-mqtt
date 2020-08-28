@@ -1,13 +1,5 @@
 import Foundation
 
-public enum DecodeError: Error {
-    case malformedData
-    case malformedQoS
-    case malformedPacketType
-    case malformedConnAckReturnCode
-    case malformedSubAckReturnCode
-}
-
 final class MQTTDecoder {
     func decode(data: inout Data) throws -> MQTTPacket {
         guard data.hasSize(1) else {

@@ -2,7 +2,6 @@ import MQTT
 import Foundation
 
 let sem = DispatchSemaphore(value: 0)
-
 let queue = DispatchQueue(label: "a", qos: .background)
 
 class App: MQTTClientDelegate {
@@ -18,7 +17,7 @@ class App: MQTTClientDelegate {
             port: 1883,
             clientID: "a",
             cleanSession: true,
-            keepAlive: 30,
+            keepAlive: 10,
             willMessage: PublishMessage(topic: "will msg", payload: "willl me", retain: false, qos: .atMostOnce)
         )
         client.delegate = self
@@ -34,11 +33,8 @@ class App: MQTTClientDelegate {
             print("Connack \(packet)")
             client.subscribe(topic: "a", qos: QOS.0)
             client.publish(topic: "a", retain: false, qos: QOS.0, payload: "abc")
-            queue.asyncAfter(deadline: .now() + 5) {
-                self.client.disconnect().whenComplete({ res in
-                    print("disconnect \(res)")
-                })
-                sem.signal()
+            queue.asyncAfter(deadline: .now() + 60) {
+                self.client.disconnect()
             }
         default:
             print(packet)
@@ -46,7 +42,14 @@ class App: MQTTClientDelegate {
     }
     
     func mqttClient(_: MQTTClient, didChange state: ConnectionState) {
+        if state == .disconnected {
+            sem.signal()
+        }
         print(state)
+    }
+    
+    func mqttClient(_: MQTTClient, didCatchError error: Error) {
+        print("Error: \(error)")
     }
 }
 
@@ -54,3 +57,4 @@ let app = App()
 try app.run()
 
 sem.wait()
+

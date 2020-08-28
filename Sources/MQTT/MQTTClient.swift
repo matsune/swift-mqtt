@@ -13,7 +13,7 @@ public protocol MQTTClientDelegate: AnyObject {
 
     func mqttClient(_ client: MQTTClient, didReceive packet: MQTTPacket)
     func mqttClient(_ client: MQTTClient, didChange state: ConnectionState)
-    func mqttClient(_ client: MQTTClient, didCatchDecodeError error: DecodeError)
+    func mqttClient(_ client: MQTTClient, didCatchError error: Error)
 }
 
 public extension MQTTClientDelegate {
@@ -25,7 +25,7 @@ public extension MQTTClientDelegate {
 
     func mqttClient(_: MQTTClient, didChange _: ConnectionState) {}
 
-    func mqttClient(_: MQTTClient, didCatchDecodeError _: DecodeError) {}
+    func mqttClient(_: MQTTClient, didCatchError _: Error) {}
 }
 
 public class MQTTClient {
@@ -37,15 +37,17 @@ public class MQTTClient {
     public var willMessage: PublishMessage?
     public var username: String?
     public var password: String?
+    public var connectTimeout: Int64
 
     public weak var delegate: MQTTClientDelegate?
 
     private let group: EventLoopGroup
 
-    private var keepAliveTimer: DispatchSourceTimer?
-
     private var _nextPacketIdentifier: UInt16 = 0
     private let lockQueue = DispatchQueue(label: "_nextPacketIdentifier")
+
+    private var timeoutSchedule: Scheduled<Void>?
+    private var pingTask: RepeatedTask?
 
     public init(
         host: String,
@@ -55,7 +57,8 @@ public class MQTTClient {
         keepAlive: UInt16,
         willMessage: PublishMessage? = nil,
         username: String? = nil,
-        password: String? = nil
+        password: String? = nil,
+        connectTimeout: Int64 = 5
     ) {
         self.host = host
         self.port = port
@@ -65,6 +68,7 @@ public class MQTTClient {
         self.willMessage = willMessage
         self.username = username
         self.password = password
+        self.connectTimeout = connectTimeout
         group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     }
 
@@ -72,23 +76,28 @@ public class MQTTClient {
         try? group.syncShutdownGracefully()
     }
 
-    private var state: ChannelState = .disconnected {
+    private var channelState: ChannelState = .disconnected {
         didSet {
-            switch state {
+            switch channelState {
             case .disconnected:
-                invalidatePingTimer()
+                cancelPingTimer()
             case .connectingChannel:
                 break
             case .connectingBroker:
                 break
             case .connected:
+                cancelTimeoutTimer()
                 startPingTimer()
             }
-            let connectionState = state.connectionState
+            let connectionState = channelState.connectionState
             delegate?.delegateDispatchQueue.async {
                 self.delegate?.mqttClient(self, didChange: connectionState)
             }
         }
+    }
+
+    public var state: ConnectionState {
+        channelState.connectionState
     }
 
     private func nextPacketIdentifier() -> UInt16 {
@@ -125,84 +134,110 @@ public class MQTTClient {
     }
 
     private func startPingTimer() {
-        keepAliveTimer?.cancel()
-        keepAliveTimer = DispatchSource.makeTimerSource()
-        keepAliveTimer?.schedule(deadline: .now() + .seconds(Int(keepAlive)),
-                                 repeating: .seconds(Int(keepAlive)),
-                                 leeway: .seconds(1))
-        keepAliveTimer?.setEventHandler(handler: { [weak self] in
-            _ = self?.send(packet: PingReqPacket())
-        })
-        keepAliveTimer?.resume()
+        pingTask = group.next()
+            .scheduleRepeatedTask(initialDelay: .seconds(Int64(keepAlive)), delay: .seconds(Int64(keepAlive))) { [weak self] _ in
+                guard let self = self else { return }
+                self.send(packet: PingReqPacket()).whenFailure {
+                    self.throwErrorToDelegate($0, disconnect: true)
+                }
+            }
     }
 
-    private func invalidatePingTimer() {
-        keepAliveTimer?.cancel()
-        keepAliveTimer = nil
+    private func cancelPingTimer() {
+        pingTask?.cancel()
+        pingTask = nil
     }
 
+    /// Check connection and send MQTT packet to connecting channel.
+    /// Fail if channel is not connected.
     private func send(packet: MQTTPacket) -> EventLoopFuture<Void> {
-        switch state {
+        switch channelState {
         case let .connected(channel):
             return writeAndFlush(channel: channel, packet: packet)
         default:
-            return group.next().makeFailedFuture(Error.notConnected)
+            return group.next().makeFailedFuture(MQTTError.notConnected)
         }
     }
 
     private func writeAndFlush(channel: Channel, packet: MQTTPacket) -> EventLoopFuture<Void> {
         let bytes = packet.encode()
         return channel.writeAndFlush(ByteBuffer(bytes: bytes))
-            .always {
-                if case .failure = $0 {
-                    self.disconnect()
+    }
+
+    public func connect() {
+        switch channelState {
+        case .connected:
+            break
+        case .connectingChannel:
+            throwErrorToDelegate(MQTTError.channelConnectPending, disconnect: true)
+        case .connectingBroker:
+            throwErrorToDelegate(MQTTError.brokerConnectPending, disconnect: true)
+        case .disconnected:
+            channelState = .connectingChannel
+            startTimeoutTimer()
+            connectChannnel()
+                .flatMap { channel -> EventLoopFuture<Void> in
+                    self.channelState = .connectingBroker(channel)
+                    return self.connectBroker(channel: channel)
                 }
+                .whenFailure { [weak self] in
+                    self?.throwErrorToDelegate($0, disconnect: true)
+                }
+        }
+    }
+
+    private func startTimeoutTimer() {
+        timeoutSchedule = group.next()
+            .scheduleTask(deadline: .now() + .seconds(connectTimeout)) { [weak self] in
+                self?.throwErrorToDelegate(MQTTError.connectTimeout, disconnect: true)
             }
     }
 
-    @discardableResult
-    public func connect() -> EventLoopFuture<Void> {
-        switch state {
-        case .connected:
-            return group.next().makeSucceededFuture(())
-        case .connectingChannel:
-            return group.next().makeFailedFuture(Error.channelConnectPending)
-        case .connectingBroker:
-            return group.next().makeFailedFuture(Error.brokerConnectPending)
-        case .disconnected:
-            state = .connectingChannel
-            return connectChannnel()
-                .flatMap { channel in
-                    self.state = .connectingBroker(channel)
-                    return self.connectBroker(channel: channel)
-                }
+    private func cancelTimeoutTimer() {
+        timeoutSchedule?.cancel()
+        timeoutSchedule = nil
+    }
+
+    private func throwErrorToDelegate(_ error: Error, disconnect: Bool) {
+        delegate?.delegateDispatchQueue.async {
+            self.delegate?.mqttClient(self, didCatchError: error)
+        }
+        if disconnect {
+            self.disconnect()
         }
     }
 
-    @discardableResult
-    public func disconnect() -> EventLoopFuture<Void> {
-        switch state {
+    public func disconnect() {
+        switch channelState {
         case .connectingChannel:
-            state = .disconnected
-            return group.next().makeSucceededFuture(())
+            channelState = .disconnected
         case let .connectingBroker(channel):
-            return channel
-                .close()
-                .always { _ in self.state = .disconnected }
+            channel.close()
+                .whenComplete {
+                    self.channelState = .disconnected
+                    if case let .failure(error) = $0 {
+                        self.throwErrorToDelegate(error, disconnect: false)
+                    }
+                }
         case let .connected(channel):
-            return writeAndFlush(channel: channel, packet: DisconnectPacket())
+            writeAndFlush(channel: channel, packet: DisconnectPacket())
                 .flatMap { channel.close() }
-                .always { _ in self.state = .disconnected }
+                .whenComplete {
+                    self.channelState = .disconnected
+                    if case let .failure(error) = $0 {
+                        self.throwErrorToDelegate(error, disconnect: false)
+                    }
+                }
         case .disconnected:
-            return group.next().makeSucceededFuture(())
+            break
         }
     }
 
-    public func publish(message: PublishMessage, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
-        return publish(topic: message.topic, retain: message.retain, qos: message.qos, payload: message.payload, identifier: identifier)
+    public func publish(message: PublishMessage, identifier: UInt16? = nil) {
+        publish(topic: message.topic, retain: message.retain, qos: message.qos, payload: message.payload, identifier: identifier)
     }
 
-    public func publish(topic: String, retain: Bool, qos: QoS, payload: DataEncodable, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
+    public func publish(topic: String, retain: Bool, qos: QoS, payload: DataEncodable, identifier: UInt16? = nil) {
         let id: UInt16?
         if qos == .atMostOnce {
             id = nil
@@ -210,30 +245,36 @@ public class MQTTClient {
             id = identifier ?? nextPacketIdentifier()
         }
         let packet = PublishPacket(topic: topic, identifier: id, retain: retain, qos: qos, payload: payload.encode())
-        return send(packet: packet)
+        send(packet: packet).whenFailure {
+            self.throwErrorToDelegate($0, disconnect: true)
+        }
     }
 
-    public func subscribe(topic: String, qos: QoS, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
-        return subscribe(topicFilter: TopicFilter(topic: topic, qos: qos), identifier: identifier)
+    public func subscribe(topic: String, qos: QoS, identifier: UInt16? = nil) {
+        subscribe(topicFilter: TopicFilter(topic: topic, qos: qos), identifier: identifier)
     }
 
-    public func subscribe(topicFilter: TopicFilter, identifier _: UInt16? = nil) -> EventLoopFuture<Void>? {
-        return subscribe(topicFilters: [topicFilter])
+    public func subscribe(topicFilter: TopicFilter, identifier _: UInt16? = nil) {
+        subscribe(topicFilters: [topicFilter])
     }
 
-    public func subscribe(topicFilters: [TopicFilter], identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
+    public func subscribe(topicFilters: [TopicFilter], identifier: UInt16? = nil) {
         let packet = SubscribePacket(identifier: identifier ?? nextPacketIdentifier(),
                                      topicFilters: topicFilters)
-        return send(packet: packet)
+        send(packet: packet).whenFailure {
+            self.throwErrorToDelegate($0, disconnect: true)
+        }
     }
 
-    public func unsubscribe(topic: String, identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
-        return unsubscribe(topics: [topic], identifier: identifier)
+    public func unsubscribe(topic: String, identifier: UInt16? = nil) {
+        unsubscribe(topics: [topic], identifier: identifier)
     }
 
-    public func unsubscribe(topics: [String], identifier: UInt16? = nil) -> EventLoopFuture<Void>? {
+    public func unsubscribe(topics: [String], identifier: UInt16? = nil) {
         let packet = UnsubscribePacket(identifier: identifier ?? nextPacketIdentifier(), topicFilters: topics)
-        return send(packet: packet)
+        send(packet: packet).whenFailure {
+            self.throwErrorToDelegate($0, disconnect: true)
+        }
     }
 }
 
@@ -241,9 +282,9 @@ extension MQTTClient: MQTTChannelHandlerDelegate {
     func didReceive(packet: MQTTPacket) {
         switch packet {
         case let packet as ConnAckPacket:
-            if case let .connectingBroker(channel) = state {
+            if case let .connectingBroker(channel) = channelState {
                 if packet.returnCode == .accepted {
-                    self.state = .connected(channel)
+                    self.channelState = .connected(channel)
                 } else {
                     disconnect()
                 }
@@ -263,9 +304,7 @@ extension MQTTClient: MQTTChannelHandlerDelegate {
     }
 
     func didCatch(decodeError error: DecodeError) {
-        delegate?.delegateDispatchQueue.async {
-            self.delegate?.mqttClient(self, didCatchDecodeError: error)
-        }
+        throwErrorToDelegate(MQTTError.decodeError(error), disconnect: false)
     }
 }
 
@@ -288,11 +327,5 @@ extension MQTTClient {
                 return .connected
             }
         }
-    }
-
-    public enum Error: Swift.Error {
-        case channelConnectPending
-        case brokerConnectPending
-        case notConnected
     }
 }
