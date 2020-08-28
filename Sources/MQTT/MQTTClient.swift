@@ -1,5 +1,6 @@
 import Foundation
 import NIO
+import NIOSSL
 
 public enum ConnectionState {
     case disconnected
@@ -37,6 +38,7 @@ public class MQTTClient {
     public var willMessage: PublishMessage?
     public var username: String?
     public var password: String?
+    public var tlsConfiguration: TLSConfiguration?
     public var connectTimeout: Int64
 
     public weak var delegate: MQTTClientDelegate?
@@ -58,6 +60,7 @@ public class MQTTClient {
         willMessage: PublishMessage? = nil,
         username: String? = nil,
         password: String? = nil,
+        tlsConfiguration: TLSConfiguration? = nil,
         connectTimeout: Int64 = 5
     ) {
         self.host = host
@@ -69,6 +72,7 @@ public class MQTTClient {
         self.username = username
         self.password = password
         self.connectTimeout = connectTimeout
+        self.tlsConfiguration = tlsConfiguration
         group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     }
 
@@ -110,17 +114,38 @@ public class MQTTClient {
         }
     }
 
+    private func createSSLHandler() throws -> NIOSSLClientHandler? {
+        guard let tlsConfiguration = tlsConfiguration else {
+            return nil
+        }
+        let sslContext = try NIOSSLContext(configuration: tlsConfiguration)
+        return try NIOSSLClientHandler(context: sslContext, serverHostname: host)
+    }
+
+    private func createMQTTHandler() -> MQTTChannelHandler {
+        let mqttHandler = MQTTChannelHandler(clientID: clientID,
+                                             cleanSession: cleanSession,
+                                             keepAlive: keepAlive)
+        mqttHandler.delegate = self
+        return mqttHandler
+    }
+
     private func connectChannnel() -> EventLoopFuture<Channel> {
-        let bootstrap = ClientBootstrap(group: group)
-            .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-            .channelInitializer { channel in
-                let handler = MQTTChannelHandler(clientID: self.clientID,
-                                                 cleanSession: self.cleanSession,
-                                                 keepAlive: self.keepAlive)
-                handler.delegate = self
-                return channel.pipeline.addHandler(handler)
+        do {
+            let mqttHandler = createMQTTHandler()
+            let handlers: [ChannelHandler]
+            if let sslHandler = try createSSLHandler() {
+                handlers = [sslHandler, mqttHandler]
+            } else {
+                handlers = [mqttHandler]
             }
-        return bootstrap.connect(host: host, port: port)
+            return ClientBootstrap(group: group)
+                .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+                .channelInitializer { $0.pipeline.addHandlers(handlers) }
+                .connect(host: host, port: port)
+        } catch {
+            return group.next().makeFailedFuture(error)
+        }
     }
 
     private func connectBroker(channel: Channel) -> EventLoopFuture<Void> {

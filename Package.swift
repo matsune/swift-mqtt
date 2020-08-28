@@ -5,19 +5,20 @@ import PackageDescription
 
 let package = Package(
     name: "swift-mqtt",
-    platforms: [
-        .macOS(.v10_15),
-    ],
     products: [
         .library(name: "MQTT", targets: ["MQTT"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.20.2"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.0.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.0.0"),
     ],
     targets: [
         .target(
             name: "MQTT",
-            dependencies: [.product(name: "NIO", package: "swift-nio")]
+            dependencies: [
+              .product(name: "NIO", package: "swift-nio"),
+              .product(name: "NIOSSL", package: "swift-nio-ssl"),
+            ]
         ),
         .testTarget(
             name: "MQTTTests",
