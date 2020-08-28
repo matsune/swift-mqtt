@@ -24,7 +24,7 @@ class App: MQTTClientDelegate {
                                                                privateKey: .privateKey(.init(file: keyCert, format: .pem)))
         client = MQTTClient(
             host: "localhost",
-            port: 1883,
+            port: 8883,
             clientID: "swift-mqtt client",
             cleanSession: true,
             keepAlive: 30,
