@@ -42,22 +42,22 @@ final class MQTTDecoder {
             throw DecodeError.malformedData
         }
     }
+}
 
-    private func decodeRemainLen(data: inout Data) throws -> Int {
-        var multiplier = 1
-        var value = 0
-        var encodedByte: UInt8 = 0
-        repeat {
-            guard data.hasSize(1) else {
-                throw DecodeError.malformedData
-            }
-            encodedByte = data.read1ByteInt()
-            value += (Int(encodedByte) & 127) * multiplier
-            multiplier *= 128
-            if multiplier > 128 * 128 * 128 {
-                break
-            }
-        } while (encodedByte & 128) != 0
-        return value
-    }
+internal func decodeRemainLen(data: inout Data) throws -> Int {
+    var multiplier = 1
+    var value = 0
+    var encodedByte: UInt8 = 0
+    repeat {
+        guard data.hasSize(1) else {
+            throw DecodeError.malformedData
+        }
+        encodedByte = data.read1ByteInt()
+        value += (Int(encodedByte) & 127) * multiplier
+        multiplier *= 128
+        if multiplier > 128 * 128 * 128 {
+            break
+        }
+    } while (encodedByte & 128) != 0
+    return value
 }
