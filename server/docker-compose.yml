@@ -1,10 +1,12 @@
-version: "3.5"
+version: '3'
+
 services:
-  broker:
-    image: eclipse-mosquitto
-    ports:
-      - "8883:1883"
-      - "9001:9001"
+  mosquitto:
+    build: ./mosquitto
+    environment:
+      - MOSQUITTO_PASSWORDFILE=password.txt
     volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ./certs:/mosquitto/certs
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/certs:/mosquitto/certs
+    ports:
+      - 8883:8883

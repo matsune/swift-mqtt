@@ -2,7 +2,7 @@
 
 # ref: https://gist.github.com/zapstar/4b51d7cfa74c7e709fcdaace19233443
 
-DIR="certs"
+DIR="mosquitto/certs"
 
 mkdir $DIR
 cd $DIR
