@@ -1,6 +1,7 @@
 #!/bin/ash
-
 set -e
+
+MOSQUITTO_PASSWORDFILE="password.txt"
 
 if [ ! -f "${MOSQUITTO_PASSWORDFILE}" ]
 then

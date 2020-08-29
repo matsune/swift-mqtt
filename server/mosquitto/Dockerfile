@@ -2,7 +2,7 @@ FROM eclipse-mosquitto
 
 COPY docker-entrypoint.sh /
 
-COPY $MOSQUITTO_PASSWORDFILE /
+COPY password.txt /
 
 ENTRYPOINT ["sh", "./docker-entrypoint.sh"]
 
