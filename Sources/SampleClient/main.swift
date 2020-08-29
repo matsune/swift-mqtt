@@ -2,6 +2,13 @@ import Foundation
 import MQTT
 import NIOSSL
 
+let base: String
+if CommandLine.arguments.count > 1 {
+    base = CommandLine.arguments[1]
+} else {
+    base = "."
+}
+
 let sem = DispatchSemaphore(value: 0)
 let queue = DispatchQueue(label: "a", qos: .background)
 
@@ -13,9 +20,9 @@ class App: MQTTClientDelegate {
     }
 
     init() {
-        let caCert = "./server/certs/ca/ca_cert.pem"
-        let clientCert = "./server/certs/client/client_cert.pem"
-        let keyCert = "./server/certs/client/private/client_key.pem"
+        let caCert = "\(base)/server/mosquitto/certs/ca/ca_cert.pem"
+        let clientCert = "\(base)/server/mosquitto/certs/client/client_cert.pem"
+        let keyCert = "\(base)/server/mosquitto/certs/client/private/client_key.pem"
         let tlsConfiguration = try! TLSConfiguration.forClient(minimumTLSVersion: .tlsv11,
                                                                maximumTLSVersion: .tlsv12,
                                                                certificateVerification: .noHostnameVerification,
@@ -29,8 +36,11 @@ class App: MQTTClientDelegate {
             cleanSession: true,
             keepAlive: 30,
             willMessage: PublishMessage(topic: "will", payload: "will msg", retain: false, qos: .atMostOnce),
+            username: "swift-mqtt",
+            password: "swift-mqtt",
             tlsConfiguration: tlsConfiguration
         )
+        client.tlsConfiguration = tlsConfiguration
         client.delegate = self
     }
 

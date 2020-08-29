@@ -25,7 +25,7 @@ let package = Package(
             dependencies: ["MQTT"]
         ),
         .target(
-            name: "client",
+            name: "SampleClient",
             dependencies: ["MQTT"]
         ),
     ]
