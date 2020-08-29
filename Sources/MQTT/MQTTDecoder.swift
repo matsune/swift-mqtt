@@ -10,9 +10,10 @@ final class MQTTDecoder {
         let flags = byte1 & 0x0F
         let fixedHeader = FixedHeader(packetType: packetType, flags: flags)
         let remainLen = try decodeRemainLen(data: &data)
-        guard data.count == remainLen else {
+        if data.count < remainLen {
             throw DecodeError.malformedData
         }
+        data = data[..<remainLen]
         switch fixedHeader.packetType {
         case .connack:
             return try ConnAckPacket(fixedHeader: fixedHeader, data: &data)
