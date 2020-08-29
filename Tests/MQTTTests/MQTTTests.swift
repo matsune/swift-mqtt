@@ -9,6 +9,7 @@ final class MQTTTests: XCTestCase {
     private var didReceivePacketCallback: (MQTTPacket) -> Void = { _ in }
 
     override func setUp() {
+        super.setUp()
         let caCert = "./server/mosquitto/certs/ca/ca_cert.pem"
         let clientCert = "./server/mosquitto/certs/client/client_cert.pem"
         let keyCert = "./server/mosquitto/certs/client/private/client_key.pem"
@@ -29,7 +30,7 @@ final class MQTTTests: XCTestCase {
                             tlsConfiguration: tlsConfiguration,
                             connectTimeout: 5)
         client.delegate = self
-        
+
         let connect = expectation(description: "connect")
         didChangeStateCallback = { state in
             if state == .connected {
@@ -39,12 +40,13 @@ final class MQTTTests: XCTestCase {
         client.connect()
         wait(for: [connect], timeout: 5)
     }
-    
+
     override func tearDown() {
+        super.tearDown()
         client.disconnect()
         client = nil
     }
-    
+
     func testSubscribe() {
         let subscribe = expectation(description: "subscribe")
         let identifier: UInt16 = 10
@@ -56,15 +58,42 @@ final class MQTTTests: XCTestCase {
                 XCTAssert(packet.returnCodes == returnCodes, "return codes, \(packet.returnCodes) != \(returnCodes)")
                 subscribe.fulfill()
             default:
-                break
+                XCTFail()
             }
         }
         client.subscribe(topic: "test", qos: .atMostOnce, identifier: identifier)
         wait(for: [subscribe], timeout: 5)
     }
+    
+    func testPublish() {
+        let subscribe = expectation(description: "subscribe")
+        let publish = expectation(description: "publish")
+        let identifier: UInt16 = 10
+        let topic = "test"
+        let payload = "test payload"
+        didReceivePacketCallback = { packet in
+            switch packet {
+            case let packet as PublishPacket:
+                XCTAssert(packet.topic == topic)
+                XCTAssert(packet.payload.encode() == payload.encode())
+                publish.fulfill()
+            case let packet as SubAckPacket:
+                XCTAssert(packet.identifier == identifier)
+                XCTAssert(packet.returnCodes == [.success(.atMostOnce)])
+                subscribe.fulfill()
+            default:
+                XCTFail()
+            }
+        }
+        client.subscribe(topic: topic, qos: .atMostOnce, identifier: identifier)
+        wait(for: [subscribe], timeout: 5)
+        client.publish(topic: topic, retain: false, qos: .atMostOnce, payload: payload, identifier: identifier)
+        wait(for: [publish], timeout: 5)
+    }
 
     static var allTests = [
         ("testSubscribe", testSubscribe),
+        ("testPublish", testPublish),
     ]
 }
 

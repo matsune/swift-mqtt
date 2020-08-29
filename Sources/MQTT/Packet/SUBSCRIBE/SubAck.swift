@@ -36,8 +36,8 @@ extension SubAckPacket {
                 throw DecodeError.malformedSubAckReturnCode
             }
         }
-        
-        public static func ==(lhs: ReturnCode, rhs: ReturnCode) -> Bool {
+
+        public static func == (lhs: ReturnCode, rhs: ReturnCode) -> Bool {
             switch (lhs, rhs) {
             case (.failure, .failure):
                 return true
