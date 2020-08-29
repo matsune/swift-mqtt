@@ -4,8 +4,9 @@ import XCTest
 
 final class MQTTTests: XCTestCase {
     private var client: MQTTClient!
-    
-    private var didChangeCallback: (ConnectionState) -> Void = { _ in }
+
+    private var didChangeStateCallback: (ConnectionState) -> Void = { _ in }
+    private var didReceivePacketCallback: (MQTTPacket) -> Void = { _ in }
 
     override func setUp() {
         let caCert = "./server/mosquitto/certs/ca/ca_cert.pem"
@@ -21,19 +22,16 @@ final class MQTTTests: XCTestCase {
                             port: 8883,
                             clientID: "MQTTTests",
                             cleanSession: true,
-                            keepAlive: 30,
+                            keepAlive: 60,
                             willMessage: nil,
                             username: "swift-mqtt",
                             password: "swift-mqtt",
                             tlsConfiguration: tlsConfiguration,
                             connectTimeout: 5)
         client.delegate = self
-    }
-    
-    func testConnect() {
+        
         let connect = expectation(description: "connect")
-        didChangeCallback = { state in
-            print(state)
+        didChangeStateCallback = { state in
             if state == .connected {
                 connect.fulfill()
             }
@@ -42,21 +40,44 @@ final class MQTTTests: XCTestCase {
         wait(for: [connect], timeout: 5)
     }
     
+    override func tearDown() {
+        client.disconnect()
+        client = nil
+    }
+    
+    func testSubscribe() {
+        let subscribe = expectation(description: "subscribe")
+        let identifier: UInt16 = 10
+        didReceivePacketCallback = { packet in
+            switch packet {
+            case let packet as SubAckPacket:
+                XCTAssert(packet.identifier == identifier, "identifier, \(packet.identifier) != \(identifier)")
+                let returnCodes: [SubAckPacket.ReturnCode] = [.success(.atMostOnce)]
+                XCTAssert(packet.returnCodes == returnCodes, "return codes, \(packet.returnCodes) != \(returnCodes)")
+                subscribe.fulfill()
+            default:
+                break
+            }
+        }
+        client.subscribe(topic: "test", qos: .atMostOnce, identifier: identifier)
+        wait(for: [subscribe], timeout: 5)
+    }
+
     static var allTests = [
-        ("testConnect", testConnect),
+        ("testSubscribe", testSubscribe),
     ]
 }
 
 extension MQTTTests: MQTTClientDelegate {
     func mqttClient(_: MQTTClient, didChange state: ConnectionState) {
-        didChangeCallback(state)
+        didChangeStateCallback(state)
     }
 
     func mqttClient(_: MQTTClient, didCatchError error: Error) {
-        
+        XCTFail("\(error)")
     }
-    
-    func mqttClient(_: MQTTClient, didReceive _: MQTTPacket) {
-        
+
+    func mqttClient(_: MQTTClient, didReceive packet: MQTTPacket) {
+        didReceivePacketCallback(packet)
     }
 }

@@ -22,7 +22,7 @@ public final class SubAckPacket: MQTTPacket {
 }
 
 extension SubAckPacket {
-    public enum ReturnCode {
+    public enum ReturnCode: Equatable {
         case success(QoS)
         case failure
 
@@ -34,6 +34,17 @@ extension SubAckPacket {
                 self = .failure
             default:
                 throw DecodeError.malformedSubAckReturnCode
+            }
+        }
+        
+        public static func ==(lhs: ReturnCode, rhs: ReturnCode) -> Bool {
+            switch (lhs, rhs) {
+            case (.failure, .failure):
+                return true
+            case let (.success(qosL), .success(qosR)):
+                return qosL == qosR
+            default:
+                return false
             }
         }
     }

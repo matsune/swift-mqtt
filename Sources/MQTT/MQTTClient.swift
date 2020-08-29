@@ -275,8 +275,8 @@ public class MQTTClient {
         subscribe(topicFilter: TopicFilter(topic: topic, qos: qos), identifier: identifier)
     }
 
-    public func subscribe(topicFilter: TopicFilter, identifier _: UInt16? = nil) {
-        subscribe(topicFilters: [topicFilter])
+    public func subscribe(topicFilter: TopicFilter, identifier: UInt16? = nil) {
+        subscribe(topicFilters: [topicFilter], identifier: identifier)
     }
 
     public func subscribe(topicFilters: [TopicFilter], identifier: UInt16? = nil) {
