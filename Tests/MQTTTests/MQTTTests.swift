@@ -64,7 +64,7 @@ final class MQTTTests: XCTestCase {
         client.subscribe(topic: "test", qos: .atMostOnce, identifier: identifier)
         wait(for: [subscribe], timeout: 5)
     }
-    
+
     func testPublish() {
         let subscribe = expectation(description: "subscribe")
         let publish = expectation(description: "publish")
@@ -75,7 +75,7 @@ final class MQTTTests: XCTestCase {
             switch packet {
             case let packet as PublishPacket:
                 XCTAssert(packet.topic == topic)
-                XCTAssert(packet.payload.encode() == payload.encode())
+                XCTAssert(packet.payload == Data(payload.utf8))
                 publish.fulfill()
             case let packet as SubAckPacket:
                 XCTAssert(packet.identifier == identifier)

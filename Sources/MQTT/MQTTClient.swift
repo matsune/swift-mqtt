@@ -123,9 +123,7 @@ public class MQTTClient {
     }
 
     private func createMQTTHandler() -> MQTTChannelHandler {
-        let mqttHandler = MQTTChannelHandler(clientID: clientID,
-                                             cleanSession: cleanSession,
-                                             keepAlive: keepAlive)
+        let mqttHandler = MQTTChannelHandler()
         mqttHandler.delegate = self
         return mqttHandler
     }

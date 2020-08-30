@@ -1,6 +1,6 @@
 import Foundation
 
-final class MQTTDecoder {
+class MQTTDecoder {
     func decode(data: inout Data) throws -> MQTTPacket {
         guard data.hasSize(1) else {
             throw DecodeError.malformedData

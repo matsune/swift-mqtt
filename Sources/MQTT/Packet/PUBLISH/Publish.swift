@@ -4,7 +4,7 @@ import Foundation
 /// [PUBLISH – Publish message](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718037)
 public final class PublishPacket: MQTTPacket {
     public let variableHeader: VariableHeader
-    public let payload: DataEncodable
+    public let payload: Data
 
     public var qos: QoS {
         QoS(rawValue: fixedHeader.flags >> 1 & 0b11)!
@@ -34,7 +34,7 @@ public final class PublishPacket: MQTTPacket {
             }
         }
         variableHeader = VariableHeader(topic: topic, identifier: identifier)
-        self.payload = payload
+        self.payload = payload.encode()
         super.init(fixedHeader: FixedHeader(packetType: .publish, flags: flags))
     }
 

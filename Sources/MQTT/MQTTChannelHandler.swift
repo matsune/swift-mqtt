@@ -11,21 +11,11 @@ protocol MQTTChannelHandlerDelegate: AnyObject {
 final class MQTTChannelHandler: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
 
-    var clientID: String
-    var cleanSession: Bool
-    var keepAlive: UInt16
-
-    let decoder = MQTTDecoder()
+    private let decoder: MQTTDecoder
     weak var delegate: MQTTChannelHandlerDelegate?
 
-    init(
-        clientID: String,
-        cleanSession: Bool,
-        keepAlive: UInt16
-    ) {
-        self.clientID = clientID
-        self.cleanSession = cleanSession
-        self.keepAlive = keepAlive
+    init(decoder: MQTTDecoder = MQTTDecoder()) {
+        self.decoder = decoder
     }
 
     func channelRead(context _: ChannelHandlerContext, data: NIOAny) {
