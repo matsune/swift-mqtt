@@ -1,9 +1,9 @@
 # swift-mqtt
 
-Asyncronous MQTT client library using [SwiftNIO](https://github.com/apple/swift-nio) for networking layer.
+Asynchronous MQTT client library using [SwiftNIO](https://github.com/apple/swift-nio) for networking layer.
 
 - Based on [MQTT Version 3.1.1 Specification](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718028).
-- Support SSL/TLS connection
+- Supports SSL/TLS connection
 
 ## Usage
 
@@ -21,7 +21,7 @@ let client = MQTTClient(
 client.connect()
 ```
 
-You can handle events by delegate methods.
+You can handle events with delegate methods.
 
 ```swift
 client.delegate = self
@@ -69,7 +69,7 @@ client.disconnect()
 
 ## SSL/TLS connection
 
-This library uses [SwiftNIO SSL](https://github.com/apple/swift-nio-ssl) for SSL connection. You can configure settings of client.
+This library uses [SwiftNIO SSL](https://github.com/apple/swift-nio-ssl) for SSL connection. You can configure settings of a client.
 
 ```swift
 let caCert = "./server/certs/ca/ca_cert.pem"
