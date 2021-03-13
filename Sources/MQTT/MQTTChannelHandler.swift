@@ -19,7 +19,9 @@ final class MQTTChannelHandler: ChannelInboundHandler {
         self.decoder = decoder
     }
 
-    func channelRead(context _: ChannelHandlerContext, data: NIOAny) {
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+		defer { context.fireChannelRead(data) }
+
         var buf = unwrapInboundIn(data)
         if let bytes = buf.readBytes(length: buf.readableBytes) {
 			packetData.append(contentsOf: bytes)
@@ -27,6 +29,8 @@ final class MQTTChannelHandler: ChannelInboundHandler {
     }
 
 	func channelReadComplete(context: ChannelHandlerContext) {
+		defer { context.fireChannelReadComplete() }
+
 		var data = packetData
 		packetData = Data()
 
@@ -42,10 +46,12 @@ final class MQTTChannelHandler: ChannelInboundHandler {
 	}
 
     func channelActive(context: ChannelHandlerContext) {
+		defer { context.fireChannelActive() }
         delegate?.channelActive(channel: context.channel)
     }
 
-    func channelInactive(context _: ChannelHandlerContext) {
+    func channelInactive(context: ChannelHandlerContext) {
+		defer { context.fireChannelInactive() }
         delegate?.channelInactive()
     }
 }
