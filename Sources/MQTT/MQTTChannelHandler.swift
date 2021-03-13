@@ -13,6 +13,7 @@ final class MQTTChannelHandler: ChannelInboundHandler {
 
     private let decoder: MQTTDecoder
     weak var delegate: MQTTChannelHandlerDelegate?
+	private var packetData = Data()
 
     init(decoder: MQTTDecoder = MQTTDecoder()) {
         self.decoder = decoder
@@ -21,18 +22,24 @@ final class MQTTChannelHandler: ChannelInboundHandler {
     func channelRead(context _: ChannelHandlerContext, data: NIOAny) {
         var buf = unwrapInboundIn(data)
         if let bytes = buf.readBytes(length: buf.readableBytes) {
-            var data = Data(bytes)
-            do {
-                let packet = try decoder.decode(data: &data)
-                delegate?.didReceive(packet: packet)
-            } catch let error as DecodeError {
-                delegate?.didCatch(decodeError: error)
-            } catch {
-                // unhandled error
-                fatalError("Error while decoding packet data: \(error.localizedDescription)")
-            }
+			packetData.append(contentsOf: bytes)
         }
     }
+
+	func channelReadComplete(context: ChannelHandlerContext) {
+		var data = packetData
+		packetData = Data()
+
+		do {
+			let packet = try decoder.decode(data: &data)
+			delegate?.didReceive(packet: packet)
+		} catch let error as DecodeError {
+			delegate?.didCatch(decodeError: error)
+		} catch {
+			// unhandled error
+			fatalError("Error while decoding packet data: \(error.localizedDescription)")
+		}
+	}
 
     func channelActive(context: ChannelHandlerContext) {
         delegate?.channelActive(channel: context.channel)
